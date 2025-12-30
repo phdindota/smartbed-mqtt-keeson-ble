@@ -22,6 +22,25 @@ This project provides MQTT integration for Keeson smart beds, allowing you to co
 - BaseI5
 - BaseI4
 
+### Observed KSBT03 Characteristics (nRF Connect)
+
+The following BLE characteristics have been observed for KSBT03 series devices through reverse-engineering using nRF Connect. This information is preliminary and represents advertisement-level data only.
+
+**Observed Device:** `KSBT03C101071926`
+
+**BLE Advertisement Details:**
+- **Device Name Pattern:** `KSBT03C` followed by numeric identifier
+- **Service UUID:** `6e400001-b5a3-f393-e0a9-e50e24dcca9e` (Nordic UART Service compatible)
+- **Connectable:** Yes
+- **Advertising Type:** Legacy
+- **BLE Flags:** 
+  - LE General Discoverable Mode
+  - BR/EDR Not Supported
+- **Advertising Interval:** ~157 ms
+- **Observed RSSI:** -68 to -73 dBm (stable)
+
+**Note:** This information comes from nRF Connect BLE advertisement captures and represents only the service-level characteristics currently known. The actual command protocol for controlling KSBT03 devices requires deeper protocol analysis beyond what is visible in advertisement data. KSBT03 devices are expected to work with the existing KSBT controller implementation in this project, as they share the same service UUID.
+
 ## Requirements
 
 - Home Assistant with MQTT broker (e.g., Mosquitto)
