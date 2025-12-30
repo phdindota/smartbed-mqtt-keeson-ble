@@ -39,7 +39,11 @@ The following BLE characteristics have been observed for KSBT03 series devices t
 - **Advertising Interval:** ~157 ms
 - **Observed RSSI:** -68 to -73 dBm (stable)
 
-**Note:** This information comes from nRF Connect BLE advertisement captures and represents only the service-level characteristics currently known. The actual command protocol for controlling KSBT03 devices requires deeper protocol analysis beyond what is visible in advertisement data. KSBT03 devices are expected to work with the existing KSBT controller implementation in this project, as they share the same service UUID.
+**Important Notes:**
+- This information comes from nRF Connect BLE advertisement captures
+- Represents only the service-level characteristics currently known
+- The actual command protocol for controlling KSBT03 devices requires deeper protocol analysis beyond what is visible in advertisement data
+- KSBT03 devices are expected to work with the existing KSBT controller implementation in this project, as they share the same service UUID
 
 ## Requirements
 

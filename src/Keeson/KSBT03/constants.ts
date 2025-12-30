@@ -5,7 +5,6 @@
  * of a Keeson KSBT03 device (observed device: KSBT03C101071926).
  * 
  * Source: nRF Connect screenshot showing BLE advertisement data
- * Date: December 2025
  */
 
 /**
