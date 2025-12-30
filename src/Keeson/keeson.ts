@@ -39,10 +39,13 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
     const controllerBuilder = checks
       .map((check, index) => (check(bleDevice) ? controllerBuilders[index] : undefined))
       .filter((check) => check)[0];
+
     if (controllerBuilder === undefined) {
       const {
         advertisement: { manufacturerDataList, serviceUuidsList },
       } = bleDevice;
+      
+      // This should only happen if a device has metadata but doesn't match any Keeson signature
       logWarn(
         '[Keeson] Device not supported, please contact me on Discord',
         name,
