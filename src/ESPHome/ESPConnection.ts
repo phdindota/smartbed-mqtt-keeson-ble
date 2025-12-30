@@ -68,7 +68,7 @@ export class ESPConnection implements IESPConnection {
       complete,
       nameMapper
     );
-    if (deviceNames.length) logWarn(`[ESPHome] Cound not find address for device(s): ${deviceNames.join(', ')}`);
+    if (deviceNames.length) logWarn(`[ESPHome] Could not find address for device(s): ${deviceNames.join(', ')}`);
     return bleDevices;
   }
 
