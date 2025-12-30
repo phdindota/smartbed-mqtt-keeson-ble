@@ -11,7 +11,7 @@ import { deepArrayEquals } from '@utils/deepArrayEquals';
 import { logError } from '@utils/logger';
 
 export class BLEController<TCommand> extends EventEmitter implements IEventSource, IController<TCommand> {
-  cache: Dictionary<Object> = {};
+  cache: Dictionary<object> = {};
   get notifyNames() {
     return Object.keys(this.notifyHandles);
   }
