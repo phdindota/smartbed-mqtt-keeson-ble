@@ -33,14 +33,32 @@ export class ESPConnection implements IESPConnection {
     logInfo(`[ESPHome] Searching for device(s): ${deviceNames.join(', ')}`);
     deviceNames = deviceNames.map((name) => name.toLowerCase());
     const bleDevices: IBLEDevice[] = [];
+    const seenAddresses: number[] = [];
     const complete = new Deferred<void>();
     await this.discoverBLEDevices(
       (bleDevice) => {
-        const { name, mac } = bleDevice;
+        const { name, mac, advertisement, address } = bleDevice;
+        
+        // Skip if we've already accepted this device
+        if (seenAddresses.includes(address)) return;
+
         let index = deviceNames.indexOf(mac);
         if (index === -1) index = deviceNames.indexOf(name.toLowerCase());
         if (index === -1) return;
 
+        // Skip devices with empty metadata (partial/early advertisements)
+        // Wait for a more complete advertisement with service UUIDs or manufacturer data
+        const hasEmptyMetadata = 
+          advertisement.manufacturerDataList.length === 0 && 
+          advertisement.serviceUuidsList.length === 0;
+        
+        if (hasEmptyMetadata) {
+          logInfo(`[ESPHome] Skipping ${name} with empty metadata, waiting for complete advertisement`);
+          return;
+        }
+
+        // Mark this device as seen and accepted
+        seenAddresses.push(address);
         deviceNames.splice(index, 1);
         logInfo(`[ESPHome] Found device: ${name} (${mac})`);
         bleDevices.push(bleDevice);
@@ -59,15 +77,12 @@ export class ESPConnection implements IESPConnection {
     complete: Promise<void>,
     nameMapper?: (name: string) => string
   ) {
-    const seenAddresses: number[] = [];
     const listenerBuilder = (connection: Connection) => ({
       connection,
       listener: (advertisement: BLEAdvertisement) => {
         let { name } = advertisement;
-        const { address } = advertisement;
 
-        if (seenAddresses.includes(address) || !name) return;
-        seenAddresses.push(address);
+        if (!name) return;
 
         if (nameMapper) name = nameMapper(name);
         onNewDeviceFound(new BLEDevice(name, advertisement, connection));
