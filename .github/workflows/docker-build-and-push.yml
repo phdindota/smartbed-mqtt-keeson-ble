@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: richardhopton/smartbed-mqtt
+  IMAGE_NAME: phdindota/keeson-bed-mqtt
 
 jobs:
   build-and-push-image:
