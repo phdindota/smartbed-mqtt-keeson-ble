@@ -32,6 +32,27 @@ export class BLEDevice implements IBLEDevice {
     return this.advertisement.serviceUuidsList;
   }
 
+  private calculateRetryDelay(): number {
+    // Exponential backoff: attempt 1 = 1s, attempt 2 = 2s, attempt 3 = 4s
+    return this.INITIAL_RETRY_DELAY_MS * Math.pow(2, this.connectionAttempts - 1);
+  }
+
+  private scheduleRetry(reason: string): void {
+    if (this.connectionAttempts >= this.MAX_CONNECTION_ATTEMPTS) {
+      return;
+    }
+
+    const delay = this.calculateRetryDelay();
+    logInfo(`[BLEDevice] Retrying connection ${reason} in ${delay}ms...`);
+    
+    // Clear any existing retry timeout before setting a new one
+    if (this.retryTimeout) {
+      clearTimeout(this.retryTimeout);
+    }
+    
+    this.retryTimeout = setTimeout(() => void this.connect(), delay);
+  }
+
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper) {
     this.mac = this.address.toString(16).padStart(12, '0');
     this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected }) => {
@@ -99,11 +120,7 @@ export class BLEDevice implements IBLEDevice {
         logWarn(`[BLEDevice] Connection timeout for device ${this.mac}`);
         
         // Retry on timeout if under the maximum attempt limit
-        if (this.connectionAttempts < this.MAX_CONNECTION_ATTEMPTS) {
-          const delay = this.INITIAL_RETRY_DELAY_MS * Math.pow(2, this.connectionAttempts - 1);
-          logInfo(`[BLEDevice] Retrying connection after timeout in ${delay}ms...`);
-          this.retryTimeout = setTimeout(() => void this.connect(), delay);
-        }
+        this.scheduleRetry('after timeout');
       }, 10000); // 10 second timeout
 
       await this.connection.connectBluetoothDeviceService(this.address, addressType);
@@ -121,13 +138,8 @@ export class BLEDevice implements IBLEDevice {
       
       logWarn(`[BLEDevice] Failed to connect to device ${this.mac}:`, error);
       
-      // Implement exponential backoff for retry
-      // Delays: attempt 1 = 1s, attempt 2 = 2s, attempt 3 = 4s
-      if (this.connectionAttempts < this.MAX_CONNECTION_ATTEMPTS) {
-        const delay = this.INITIAL_RETRY_DELAY_MS * Math.pow(2, this.connectionAttempts - 1);
-        logInfo(`[BLEDevice] Retrying connection in ${delay}ms...`);
-        this.retryTimeout = setTimeout(() => void this.connect(), delay);
-      }
+      // Schedule retry with exponential backoff
+      this.scheduleRetry('after error');
     }
   };
 
