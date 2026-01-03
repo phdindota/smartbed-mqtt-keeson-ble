@@ -2,13 +2,13 @@
 # yarn lockfile v1
 
 
-"@2colors/esphome-native-api@^1.3.1":
-  version "1.3.1"
-  resolved "https://registry.npmjs.org/@2colors/esphome-native-api/-/esphome-native-api-1.3.1.tgz"
-  integrity sha512-jDhL+31DCY2oY2s70QlRavdIIPtrIvDJlrvQsZPFxt9ORezGlgRc2lwRLGBrsxFPwoBPFm64cTX4FmpVmKB6VQ==
+"@2colors/esphome-native-api@^1.3.5":
+  version "1.3.5"
+  resolved "https://registry.npmjs.org/@2colors/esphome-native-api/-/esphome-native-api-1.3.5.tgz"
+  integrity sha512-aYRRbot7UAceFdeWRsQ5adNaNTyOj5oxhOtG6vdKTmltPx3FwN4/n6sH0Sjwlcnq0S+p6dCL3kV3xFZG3qwFEA==
   dependencies:
     "@richardhopton/noise-c.wasm" "^0.5.0"
-    google-protobuf "^3.21.2"
+    google-protobuf "^4.0.0"
     multicast-dns "^7.2.5"
 
 "@ampproject/remapping@^2.2.0":
@@ -1866,10 +1866,10 @@ globby@^11.0.4, globby@^11.1.0:
     merge2 "^1.4.1"
     slash "^3.0.0"
 
-google-protobuf@^3.21.2:
-  version "3.21.2"
-  resolved "https://registry.npmjs.org/google-protobuf/-/google-protobuf-3.21.2.tgz"
-  integrity sha512-3MSOYFO5U9mPGikIYCzK0SaThypfGgS6bHqrUGXG3DPHCrb+txNqeEcns1W0lkGfk0rCyNXm7xB9rMxnCiZOoA==
+google-protobuf@^4.0.0:
+  version "4.0.1"
+  resolved "https://registry.npmjs.org/google-protobuf/-/google-protobuf-4.0.1.tgz"
+  integrity sha512-0I4mx3UtAwpcc8l9Ds5gHcwV2FyPdwvxxBcor8LusE4b6PjoFxEngZRBepjvuQ4B0eZ2iu/Vezh8oRsnpJ9UGA==
 
 graceful-fs@^4.2.9:
   version "4.2.11"
