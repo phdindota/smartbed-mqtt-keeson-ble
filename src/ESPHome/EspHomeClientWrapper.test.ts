@@ -235,6 +235,58 @@ describe('EspHomeClientWrapper', () => {
       expect(ad.serviceDataList).toHaveLength(0);
     });
   });
+
+  describe('subscribeBluetoothAdvertisementService', () => {
+    let wrapper: EspHomeClientWrapper;
+    let mockSendPlaintextMessage: jest.Mock;
+
+    beforeEach(() => {
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+
+      // Mock the sendPlaintextMessage method
+      mockSendPlaintextMessage = jest.fn();
+      (wrapper as any).client.sendPlaintextMessage = mockSendPlaintextMessage;
+      (wrapper as any).connected = true; // Simulate connected state
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+    });
+
+    it('should send V2 protocol flag when subscribing to BLE advertisements', () => {
+      wrapper.subscribeBluetoothAdvertisementService();
+
+      // Verify sendPlaintextMessage was called
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+      
+      // Verify it was called with the correct message type (66)
+      expect(mockSendPlaintextMessage).toHaveBeenCalledWith(
+        66, // SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST
+        expect.any(Buffer)
+      );
+
+      // Decode the payload to verify flags = 1
+      const payload = mockSendPlaintextMessage.mock.calls[0][1] as Buffer;
+      
+      // The payload should be: tag (field 1, wire type 0) + value (1)
+      // Tag = (1 << 3) | 0 = 8
+      // Value = 1
+      // So the buffer should be [0x08, 0x01]
+      expect(payload).toEqual(Buffer.from([0x08, 0x01]));
+    });
+
+    it('should not send request when not connected', () => {
+      (wrapper as any).connected = false;
+
+      wrapper.subscribeBluetoothAdvertisementService();
+
+      // Verify sendPlaintextMessage was not called
+      expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // Helper functions to encode protobuf messages for testing

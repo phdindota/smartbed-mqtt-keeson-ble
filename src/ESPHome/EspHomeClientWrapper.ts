@@ -18,6 +18,7 @@ enum BluetoothMessageType {
   BLUETOOTH_GATT_NOTIFY_DATA_RESPONSE = 79,
   BLUETOOTH_GATT_ERROR_RESPONSE = 83,
   BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE = 93,
+  BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE = 126,
 }
 
 enum BluetoothDeviceRequestType {
@@ -196,6 +197,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       BluetoothMessageType.BLUETOOTH_GATT_ERROR_RESPONSE,
       this.handleGATTError.bind(this)
     );
+
+    // Handle device clear cache response
+    this.messageHandlers.set(
+      BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE,
+      this.handleDeviceClearCacheResponse.bind(this)
+    );
   }
 
   async connect(): Promise<void> {
@@ -228,12 +235,13 @@ export class EspHomeClientWrapper extends EventEmitter {
     }
 
     // Send SubscribeBluetoothLEAdvertisementsRequest (message type 66)
+    // flags = 1 for V2 protocol (raw advertisements via message type 93)
     const payload = this.encodeProtoFields([
-      { fieldNumber: 1, wireType: WireType.VARINT, value: 0 }, // flags = 0
+      { fieldNumber: 1, wireType: WireType.VARINT, value: 1 }, // flags = 1 (V2 protocol)
     ]);
 
     this.sendMessage(BluetoothMessageType.SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST, payload);
-    logInfo('[ESPHomeClientWrapper] Subscribed to Bluetooth LE advertisements');
+    logInfo('[ESPHomeClientWrapper] Subscribed to Bluetooth LE advertisements (V2 protocol)');
   }
 
   async connectBluetoothDeviceService(address: number, addressType: number): Promise<void> {
@@ -566,6 +574,22 @@ export class EspHomeClientWrapper extends EventEmitter {
       );
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT error response:', error);
+    }
+  }
+
+  private handleDeviceClearCacheResponse(payload: Buffer): void {
+    try {
+      const fields = this.decodeProtobuf(payload);
+      
+      const address = this.extractNumberField(fields, 1) || 0;
+      const successValue = this.extractNumberField(fields, 2) ?? 0;
+      const success = successValue === 1;
+
+      logInfo(
+        `[ESPHomeClientWrapper] Clear cache response for device ${address.toString(16)}: ${success ? 'success' : 'failed'}`
+      );
+    } catch (error) {
+      logError('[ESPHomeClientWrapper] Error parsing clear cache response:', error);
     }
   }
 
