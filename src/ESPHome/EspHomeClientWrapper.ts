@@ -638,10 +638,9 @@ export class EspHomeClientWrapper extends EventEmitter {
       if (shift < 28) {
         value |= (byte & 0x7f) << shift;
       } else {
-        // For large shifts, multiply by power of 2
+        // For large shifts, use exponentiation operator for efficiency
         // This handles values up to JavaScript's safe integer limit (2^53 - 1)
-        const multiplier = Math.pow(2, shift);
-        value += (byte % 128) * multiplier;
+        value += (byte % 128) * (2 ** shift);
       }
       shift += 7;
 
