@@ -274,9 +274,12 @@ export class EspHomeClientWrapper extends EventEmitter {
 
     this.sendMessage(BluetoothMessageType.BLUETOOTH_DEVICE_REQUEST, payload);
     logInfo(`[ESPHomeClientWrapper] Sent pair request for device ${address.toString(16)}`);
-    
-    // Note: The actual pairing result would come through a connection response
-    // For now, return success as the old implementation did
+
+    // Note: The old @2colors/esphome-native-api implementation returned success immediately
+    // without waiting for the actual pairing result. The actual result would come through
+    // a BluetoothDeviceConnectionResponse message. We maintain the same behavior for
+    // backward compatibility. In practice, the caller should listen for connection
+    // response events to determine if pairing succeeded.
     return { paired: true };
   }
 
@@ -421,11 +424,12 @@ export class EspHomeClientWrapper extends EventEmitter {
 
   private handleBLERawAdvertisements(_payload: Buffer): void {
     try {
-      // Parse BluetoothLERawAdvertisementsResponse (message type 93)
+      // TODO: Parse BluetoothLERawAdvertisementsResponse (message type 93)
       // This is the new message format introduced in ESPHome 2024+
-      // For now, we'll log it but not fully implement parsing
-      // as the old message type 67 is still working
-      logInfo('[ESPHomeClientWrapper] Received raw BLE advertisements (message type 93)');
+      // The current implementation uses the deprecated message type 67 which is still working
+      // Full parsing implementation should be added when ESPHome deprecates type 67 entirely
+      // Expected in ESPHome 2025.8.0 or later
+      logInfo('[ESPHomeClientWrapper] Received raw BLE advertisements (message type 93) - not yet fully implemented');
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing raw BLE advertisements:', error);
     }
@@ -743,18 +747,22 @@ export class EspHomeClientWrapper extends EventEmitter {
 
     // Format as UUID string
     const hex = high.toString(16).padStart(16, '0') + low.toString(16).padStart(16, '0');
-    return `${hex.substr(0, 8)}-${hex.substr(8, 4)}-${hex.substr(12, 4)}-${hex.substr(16, 4)}-${hex.substr(20, 12)}`;
+    return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
   }
 
   private sendMessage(type: number, payload: Buffer): void {
-    // Access the internal sendPlaintextMessage method or use sendMessage if available
-    // We need to send raw protobuf messages
+    // The esphome-client library doesn't expose sendPlaintextMessage in its public API,
+    // but we need it to send custom Bluetooth proxy messages that aren't in the library.
+    // We access it through the internal client object.
     const client = this.client as any;
-    
+
     if (typeof client.sendPlaintextMessage === 'function') {
       client.sendPlaintextMessage(type, payload);
     } else {
-      logError('[ESPHomeClientWrapper] Cannot send message - sendPlaintextMessage not available');
+      // Fallback: Log an error if the method is not available
+      // This should not happen with the current version of esphome-client
+      logError('[ESPHomeClientWrapper] Cannot send message - sendPlaintextMessage not available in esphome-client');
+      throw new Error('sendPlaintextMessage method not available in esphome-client');
     }
   }
 }
