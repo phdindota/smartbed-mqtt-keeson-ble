@@ -582,7 +582,8 @@ export class EspHomeClientWrapper extends EventEmitter {
       const fields = this.decodeProtobuf(payload);
       
       const address = this.extractNumberField(fields, 1) || 0;
-      const success = this.extractNumberField(fields, 2) === 1;
+      const successValue = this.extractNumberField(fields, 2) ?? 0;
+      const success = successValue === 1;
 
       logInfo(
         `[ESPHomeClientWrapper] Clear cache response for device ${address.toString(16)}: ${success ? 'success' : 'failed'}`
