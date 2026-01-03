@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 RUN apk --no-cache add git
 
@@ -14,10 +14,10 @@ COPY tsconfig.json /smartbed-mqtt/
 
 RUN yarn build:ci
 
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Add env
-ENV LANG C.UTF-8
+ENV LANG=C.UTF-8
 
 RUN apk add --no-cache bash curl jq && \
     curl -J -L -o /tmp/bashio.tar.gz "https://github.com/hassio-addons/bashio/archive/v0.13.1.tar.gz" && \
