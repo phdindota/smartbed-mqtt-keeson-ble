@@ -2,9 +2,10 @@ import { connectToMQTT } from '@mqtt/connectToMQTT';
 import { loadStrings } from '@utils/getString';
 import { logError, logWarn } from '@utils/logger';
 import { connectToESPHome } from 'ESPHome/connectToESPHome';
+import { IESPConnection } from 'ESPHome/IESPConnection';
 import { keeson } from 'Keeson/keeson';
 
-let espHomeConnection: any = null;
+let espHomeConnection: IESPConnection | null = null;
 
 const processExit = (exitCode?: number) => {
   if (exitCode && exitCode > 0) {

@@ -54,7 +54,7 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
       }
     };
 
-    const errorHandler = async (error: any) => {
+    const errorHandler = (error: any) => {
       if (isResolved) return;
       isResolved = true;
       cleanup();
@@ -96,7 +96,7 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
       connection.off('error', errorHandler);
       
       const timeoutError = new Error(`Connection timeout after ${CONNECTION_TIMEOUT_MS}ms`);
-      void errorHandler(timeoutError);
+      errorHandler(timeoutError);
     }, CONNECTION_TIMEOUT_MS);
 
     connection.once('authorized', handleSuccess);
@@ -108,13 +108,13 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
         connection.off('error', handler);
         connection.once('error', errorHandler);
       } catch (err) {
-        void errorHandler(err);
+        errorHandler(err);
       }
     };
 
     const retryHandler = (error: any) => {
       // Initial connection attempt error - pass to main error handler
-      void errorHandler(error);
+      errorHandler(error);
     };
 
     doConnect(retryHandler);
