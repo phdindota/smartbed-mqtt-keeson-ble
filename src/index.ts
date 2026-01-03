@@ -2,7 +2,10 @@ import { connectToMQTT } from '@mqtt/connectToMQTT';
 import { loadStrings } from '@utils/getString';
 import { logError, logWarn } from '@utils/logger';
 import { connectToESPHome } from 'ESPHome/connectToESPHome';
+import { IESPConnection } from 'ESPHome/IESPConnection';
 import { keeson } from 'Keeson/keeson';
+
+let espHomeConnection: IESPConnection | null = null;
 
 const processExit = (exitCode?: number) => {
   if (exitCode && exitCode > 0) {
@@ -17,7 +20,31 @@ process.on('exit', () => {
 });
 process.on('SIGINT', () => processExit(0));
 process.on('SIGTERM', () => processExit(0));
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', async (err) => {
+  const errorMessage = err?.message || String(err);
+  
+  // Check if this is a recoverable error (unknown message type)
+  const isUnknownMessageType = errorMessage.includes('Failed find message type for Id:');
+  
+  if (isUnknownMessageType) {
+    logWarn('[ESPHome] Unknown message type error (non-fatal):', err);
+    
+    // Try to reconnect the ESPHome connection if it exists
+    if (espHomeConnection) {
+      logWarn('[ESPHome] Attempting to reconnect...');
+      try {
+        await espHomeConnection.reconnect();
+        logWarn('[ESPHome] Reconnection successful, continuing...');
+        return; // Don't exit, continue running
+      } catch (reconnectErr) {
+        logError('[ESPHome] Reconnection failed:', reconnectErr);
+      }
+    } else {
+      logWarn('[ESPHome] No connection available to reconnect');
+    }
+  }
+  
+  // For all other errors or if reconnection failed, exit
   logError(err);
   processExit(2);
 });
@@ -26,9 +53,9 @@ const start = async () => {
   await loadStrings();
 
   const mqtt = await connectToMQTT();
-  const esphome = await connectToESPHome();
+  espHomeConnection = await connectToESPHome();
   
   // Keeson BLE beds only
-  return void (await keeson(mqtt, esphome));
+  return void (await keeson(mqtt, espHomeConnection));
 };
 void start();

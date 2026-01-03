@@ -1,6 +1,6 @@
 import { Connection } from '@2colors/esphome-native-api';
 import { Deferred } from '@utils/deferred';
-import { logInfo, logWarn } from '@utils/logger';
+import { logInfo, logWarn, logError } from '@utils/logger';
 import { IESPConnection } from './IESPConnection';
 import { connect } from './connect';
 import { BLEAdvertisement } from './types/BLEAdvertisement';
@@ -8,24 +8,92 @@ import { BLEDevice } from './types/BLEDevice';
 import { IBLEDevice } from './types/IBLEDevice';
 
 export class ESPConnection implements IESPConnection {
-  constructor(private connections: Connection[]) {}
+  private connectionConfigs: Array<{
+    host: string;
+    port?: number;
+    password?: string;
+    encryptionKey?: string;
+    expectedServerName?: string;
+  }>;
+
+  constructor(
+    private connections: Connection[],
+    configs?: Array<{
+      host: string;
+      port?: number;
+      password?: string;
+      encryptionKey?: string;
+      expectedServerName?: string;
+    }>
+  ) {
+    // Store connection configs for reconnection
+    if (configs) {
+      this.connectionConfigs = configs;
+    } else {
+      // Fallback for existing code/tests - extract from connections
+      this.connectionConfigs = connections.map((conn) => ({
+        host: conn.host,
+        port: conn.port,
+        password: conn.password,
+      }));
+    }
+    
+    // Set up error handlers for each connection
+    this.setupErrorHandlers();
+  }
+
+  private setupErrorHandlers(): void {
+    for (const connection of this.connections) {
+      // Handle unknown message types gracefully
+      connection.on('error', (error: any) => {
+        const errorMessage = error?.message || String(error);
+        
+        if (errorMessage.includes('Failed find message type for Id:')) {
+          logWarn(`[ESPHome] Unknown message type on ${connection.host}:`, errorMessage);
+          // Don't crash, just log the warning
+        } else {
+          logError(`[ESPHome] Connection error on ${connection.host}:`, error);
+        }
+      });
+      
+      // Handle disconnection events
+      connection.on('disconnected', () => {
+        logWarn(`[ESPHome] Disconnected from ${connection.host}`);
+      });
+    }
+  }
 
   async reconnect(): Promise<void> {
     this.disconnect();
     logInfo('[ESPHome] Reconnecting...');
-    this.connections = await Promise.all(
-      this.connections.map((connection) =>
-        connect(new Connection({ host: connection.host, port: connection.port, password: connection.password }))
-      )
-    );
+    
+    try {
+      this.connections = await Promise.all(
+        this.connectionConfigs.map((config) =>
+          connect(new Connection(config))
+        )
+      );
+      
+      // Set up error handlers for the new connections
+      this.setupErrorHandlers();
+      
+      logInfo('[ESPHome] Reconnection successful');
+    } catch (error) {
+      logError('[ESPHome] Reconnection failed:', error);
+      throw error;
+    }
   }
 
   disconnect(): void {
     logInfo('[ESPHome] Disconnecting...');
 
     for (const connection of this.connections) {
-      connection.disconnect();
-      connection.connected = false;
+      try {
+        connection.disconnect();
+        connection.connected = false;
+      } catch (error) {
+        logWarn('[ESPHome] Error during disconnect:', error);
+      }
     }
   }
 
