@@ -1,4 +1,4 @@
-import { Connection } from '@2colors/esphome-native-api';
+import { EspHomeClientWrapper } from './EspHomeClientWrapper';
 import { logError, logInfo, logWarn } from '@utils/logger';
 
 const CONNECTION_TIMEOUT_MS = 30000; // 30 seconds
@@ -13,15 +13,18 @@ interface ConnectionConfig {
   expectedServerName?: string;
 }
 
-export const connect = (connection: Connection, retryAttempt = 0, originalConfig?: ConnectionConfig): Promise<Connection> => {
+export const connect = (
+  connection: EspHomeClientWrapper,
+  retryAttempt = 0,
+  originalConfig?: ConnectionConfig
+): Promise<EspHomeClientWrapper> => {
   // Store the original config on first call
   const config: ConnectionConfig = originalConfig || {
     host: connection.host,
     port: connection.port,
-    password: connection.password,
   };
 
-  return new Promise<Connection>((resolve, reject) => {
+  return new Promise<EspHomeClientWrapper>((resolve, reject) => {
     let timeoutId: NodeJS.Timeout | null = null;
     let isResolved = false;
 
@@ -32,26 +35,37 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
       }
     };
 
-    const handleSuccess = async () => {
+    const handleSuccess = async (data: { encrypted: boolean }) => {
       if (isResolved) return;
       isResolved = true;
       cleanup();
 
-      logInfo('[ESPHome] Connected:', connection.host);
+      logInfo(`[ESPHome] Connected: ${connection.host} (encrypted: ${data.encrypted})`);
       connection.off('error', errorHandler);
-      
-      try {
-        const deviceInfo = await connection.deviceInfoService();
-        const { bluetoothProxyFeatureFlags } = deviceInfo as any;
+
+      // Wait for device info to check Bluetooth proxy features
+      const deviceInfoHandler = (deviceInfo: any) => {
+        const { bluetoothProxyFeatureFlags } = deviceInfo;
         if (!bluetoothProxyFeatureFlags) {
           logError('[ESPHome] No Bluetooth proxy features detected:', connection.host);
-          return reject(new Error('No Bluetooth proxy features detected'));
+          connection.disconnect();
+          reject(new Error('No Bluetooth proxy features detected'));
+        } else {
+          logInfo(`[ESPHome] Bluetooth proxy features detected: ${bluetoothProxyFeatureFlags}`);
+          connection.off('deviceInfo', deviceInfoHandler);
+          resolve(connection);
         }
+      };
+
+      connection.once('deviceInfo', deviceInfoHandler);
+
+      // Set a timeout for device info
+      setTimeout(() => {
+        connection.off('deviceInfo', deviceInfoHandler);
+        // If we haven't received device info yet, assume it's okay
+        // (some devices may not send it immediately)
         resolve(connection);
-      } catch (err) {
-        logError('[ESPHome] Error getting device info:', err);
-        reject(err);
-      }
+      }, 5000);
     };
 
     const errorHandler = (error: any) => {
@@ -60,9 +74,9 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
       cleanup();
 
       const errorMessage = error?.message || String(error);
-      
+
       // Check if this is a recoverable error that we should retry
-      const isRecoverableError = 
+      const isRecoverableError =
         errorMessage.includes('timeout') ||
         errorMessage.includes('ECONNREFUSED') ||
         errorMessage.includes('ETIMEDOUT') ||
@@ -71,12 +85,15 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
 
       if (isRecoverableError && retryAttempt < MAX_RETRY_ATTEMPTS) {
         const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, retryAttempt);
-        logWarn(`[ESPHome] Connection failed (attempt ${retryAttempt + 1}/${MAX_RETRY_ATTEMPTS}), retrying in ${delay}ms:`, errorMessage);
-        
+        logWarn(
+          `[ESPHome] Connection failed (attempt ${retryAttempt + 1}/${MAX_RETRY_ATTEMPTS}), retrying in ${delay}ms:`,
+          errorMessage
+        );
+
         setTimeout(() => {
           // Create a new connection with the same config
-          const newConnection = new Connection(config);
-          
+          const newConnection = new EspHomeClientWrapper(config);
+
           connect(newConnection, retryAttempt + 1, config)
             .then(resolve)
             .catch(reject);
@@ -91,32 +108,18 @@ export const connect = (connection: Connection, retryAttempt = 0, originalConfig
     timeoutId = setTimeout(() => {
       if (isResolved) return;
       isResolved = true;
-      
-      connection.off('authorized', handleSuccess);
+
+      connection.off('connected', handleSuccess);
       connection.off('error', errorHandler);
-      
+
       const timeoutError = new Error(`Connection timeout after ${CONNECTION_TIMEOUT_MS}ms`);
       errorHandler(timeoutError);
     }, CONNECTION_TIMEOUT_MS);
 
-    connection.once('authorized', handleSuccess);
+    connection.once('connected', handleSuccess);
+    connection.once('error', errorHandler);
 
-    const doConnect = (handler: (error: any) => void) => {
-      try {
-        connection.once('error', handler);
-        connection.connect();
-        connection.off('error', handler);
-        connection.once('error', errorHandler);
-      } catch (err) {
-        errorHandler(err);
-      }
-    };
-
-    const retryHandler = (error: any) => {
-      // Initial connection attempt error - pass to main error handler
-      errorHandler(error);
-    };
-
-    doConnect(retryHandler);
+    // Start connection
+    connection.connect().catch(errorHandler);
   });
 };

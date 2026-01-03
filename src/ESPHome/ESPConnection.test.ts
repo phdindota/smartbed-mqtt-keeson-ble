@@ -1,15 +1,18 @@
-import { Connection } from '@2colors/esphome-native-api';
+import { EspHomeClientWrapper } from './EspHomeClientWrapper';
 import { mock } from 'jest-mock-extended';
 import { ESPConnection } from './ESPConnection';
 import { BLEAdvertisement } from './types/BLEAdvertisement';
 
+// Mock esphome-client
+jest.mock('esphome-client');
+
 describe(ESPConnection.name, () => {
   describe('getBLEDevices', () => {
     it('should skip devices with empty metadata and wait for complete advertisement', async () => {
-      const mockConnection = mock<Connection>();
+      const mockConnection = mock<EspHomeClientWrapper>();
       let advertisementListener: ((ad: BLEAdvertisement) => void) | undefined;
 
-      mockConnection.on.mockImplementation((event: string, listener: any) => {
+      mockConnection.on.mockImplementation((event: string | symbol, listener: any) => {
         if (event === 'message.BluetoothLEAdvertisementResponse') {
           advertisementListener = listener;
         }
@@ -66,10 +69,10 @@ describe(ESPConnection.name, () => {
     });
 
     it('should accept devices with manufacturer data even if service UUIDs are empty', async () => {
-      const mockConnection = mock<Connection>();
+      const mockConnection = mock<EspHomeClientWrapper>();
       let advertisementListener: ((ad: BLEAdvertisement) => void) | undefined;
 
-      mockConnection.on.mockImplementation((event: string, listener: any) => {
+      mockConnection.on.mockImplementation((event: string | symbol, listener: any) => {
         if (event === 'message.BluetoothLEAdvertisementResponse') {
           advertisementListener = listener;
         }
@@ -114,10 +117,10 @@ describe(ESPConnection.name, () => {
     });
 
     it('should accept devices with service UUIDs even if manufacturer data is empty', async () => {
-      const mockConnection = mock<Connection>();
+      const mockConnection = mock<EspHomeClientWrapper>();
       let advertisementListener: ((ad: BLEAdvertisement) => void) | undefined;
 
-      mockConnection.on.mockImplementation((event: string, listener: any) => {
+      mockConnection.on.mockImplementation((event: string | symbol, listener: any) => {
         if (event === 'message.BluetoothLEAdvertisementResponse') {
           advertisementListener = listener;
         }

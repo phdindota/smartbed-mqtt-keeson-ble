@@ -1,4 +1,4 @@
-import { BluetoothGATTCharacteristic, BluetoothGATTService } from '@2colors/esphome-native-api';
+import { BluetoothGATTCharacteristic, BluetoothGATTService } from '../EspHomeClientWrapper';
 import { BLEAdvertisement } from './BLEAdvertisement';
 import { BLEDeviceInfo } from './BLEDeviceInfo';
 
