@@ -93,7 +93,17 @@ export class BLEDevice implements IBLEDevice {
       // Set connection timeout
       this.connectionTimeout = setTimeout(() => {
         this.connecting = false;
+        if (this.connectionTimeout) {
+          this.connectionTimeout = undefined;
+        }
         logWarn(`[BLEDevice] Connection timeout for device ${this.mac}`);
+        
+        // Retry on timeout if under the maximum attempt limit
+        if (this.connectionAttempts < this.MAX_CONNECTION_ATTEMPTS) {
+          const delay = this.INITIAL_RETRY_DELAY_MS * Math.pow(2, this.connectionAttempts - 1);
+          logInfo(`[BLEDevice] Retrying connection after timeout in ${delay}ms...`);
+          this.retryTimeout = setTimeout(() => void this.connect(), delay);
+        }
       }, 10000); // 10 second timeout
 
       await this.connection.connectBluetoothDeviceService(this.address, addressType);
@@ -112,6 +122,7 @@ export class BLEDevice implements IBLEDevice {
       logWarn(`[BLEDevice] Failed to connect to device ${this.mac}:`, error);
       
       // Implement exponential backoff for retry
+      // Delays: attempt 1 = 1s, attempt 2 = 2s, attempt 3 = 4s
       if (this.connectionAttempts < this.MAX_CONNECTION_ATTEMPTS) {
         const delay = this.INITIAL_RETRY_DELAY_MS * Math.pow(2, this.connectionAttempts - 1);
         logInfo(`[BLEDevice] Retrying connection in ${delay}ms...`);

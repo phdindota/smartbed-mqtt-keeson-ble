@@ -140,8 +140,8 @@ describe('BLEDevice', () => {
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
     });
 
-    it('should handle connection timeout', async () => {
-      // Don't send connection response
+    it('should handle connection timeout and retry', async () => {
+      // Don't send connection response to trigger timeout
       const connectPromise = bleDevice.connect();
       
       // Advance timer by timeout duration (10 seconds)
@@ -150,6 +150,13 @@ describe('BLEDevice', () => {
       await connectPromise;
       
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
+      
+      // Advance timer by retry delay (1 second) to trigger retry
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      
+      // Should have retried
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(2);
     });
 
     it('should reset retry counter on successful connection', async () => {
