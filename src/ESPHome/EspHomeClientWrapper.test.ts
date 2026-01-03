@@ -243,14 +243,13 @@ function encodeVarint(value: number): Buffer {
   const bytes: number[] = [];
   
   // Handle values up to 2^53-1 (JavaScript's safe integer range)
-  // For values larger than 32-bit, we need to use BigInt-style arithmetic
   let remaining = value;
   
   while (remaining > 127) {
-    bytes.push((remaining & 0x7f) | 0x80);
+    bytes.push((remaining % 128) | 0x80);
     remaining = Math.floor(remaining / 128);
   }
-  bytes.push(remaining & 0x7f);
+  bytes.push(remaining % 128);
 
   return Buffer.from(bytes);
 }

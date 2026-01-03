@@ -633,11 +633,15 @@ export class EspHomeClientWrapper extends EventEmitter {
       const byte = buffer[offset + bytesRead];
       bytesRead++;
 
-      // For shifts >= 28, use multiplication instead of bit shifting to avoid truncation
+      // For small shifts, use bit shifting for efficiency
+      // For larger shifts, use arithmetic to avoid 32-bit truncation
       if (shift < 28) {
         value |= (byte & 0x7f) << shift;
       } else {
-        value += (byte % 128) * Math.pow(2, shift);
+        // For large shifts, multiply by power of 2
+        // This handles values up to JavaScript's safe integer limit (2^53 - 1)
+        const multiplier = Math.pow(2, shift);
+        value += (byte % 128) * multiplier;
       }
       shift += 7;
 
