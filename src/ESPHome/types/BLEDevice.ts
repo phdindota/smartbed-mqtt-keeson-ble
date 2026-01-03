@@ -39,6 +39,7 @@ export class BLEDevice implements IBLEDevice {
 
   private scheduleRetry(reason: string): void {
     if (this.connectionAttempts >= this.MAX_CONNECTION_ATTEMPTS) {
+      logWarn(`[BLEDevice] Maximum connection attempts (${this.MAX_CONNECTION_ATTEMPTS}) reached for device ${this.mac}. Not retrying.`);
       return;
     }
 
@@ -113,10 +114,9 @@ export class BLEDevice implements IBLEDevice {
       
       // Set connection timeout
       this.connectionTimeout = setTimeout(() => {
+        // Clear the timeout reference first to prevent race conditions
+        this.connectionTimeout = undefined;
         this.connecting = false;
-        if (this.connectionTimeout) {
-          this.connectionTimeout = undefined;
-        }
         logWarn(`[BLEDevice] Connection timeout for device ${this.mac}`);
         
         // Retry on timeout if under the maximum attempt limit
