@@ -548,14 +548,13 @@ export class EspHomeClientWrapper extends EventEmitter {
     const bytes: number[] = [];
     
     // Handle values up to JavaScript's safe integer range (2^53 - 1)
-    // Don't use bitwise operators for large values as they truncate to 32 bits
     let remaining = value;
     
     while (remaining > 127) {
-      bytes.push((remaining & 0x7f) | 0x80);
+      bytes.push((remaining % 128) | 0x80);
       remaining = Math.floor(remaining / 128);
     }
-    bytes.push(remaining & 0x7f);
+    bytes.push(remaining % 128);
 
     return Buffer.from(bytes);
   }
@@ -634,11 +633,11 @@ export class EspHomeClientWrapper extends EventEmitter {
       const byte = buffer[offset + bytesRead];
       bytesRead++;
 
-      // For shifts >= 32, use multiplication instead of bit shifting
+      // For shifts >= 28, use multiplication instead of bit shifting to avoid truncation
       if (shift < 28) {
         value |= (byte & 0x7f) << shift;
       } else {
-        value += (byte & 0x7f) * Math.pow(2, shift);
+        value += (byte % 128) * Math.pow(2, shift);
       }
       shift += 7;
 
@@ -873,12 +872,6 @@ export class EspHomeClientWrapper extends EventEmitter {
             });
           }
           break;
-          
-        // We can add more AD types as needed:
-        // 0x01: Flags
-        // 0x20: Service Data - 32-bit UUID
-        // 0x21: Service Data - 128-bit UUID
-        // etc.
       }
     }
     

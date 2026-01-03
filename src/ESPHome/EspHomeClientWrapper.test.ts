@@ -139,7 +139,7 @@ describe('EspHomeClientWrapper', () => {
         // Service Data - 16-bit UUID (0x16)
         Buffer.from([0x08, 0x16]), // length=8, type=0x16
         Buffer.from([0x0F, 0x18]), // Service UUID: 0x180F
-        Buffer.from([0xAA, 0xBB, 0xCC, 0xDD, 0xEE]), // Service data (5 bytes, not 6)
+        Buffer.from([0xAA, 0xBB, 0xCC, 0xDD, 0xEE]), // Service data
       ]);
 
       const address = 888;
