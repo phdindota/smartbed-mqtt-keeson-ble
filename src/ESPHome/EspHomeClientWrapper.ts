@@ -16,6 +16,7 @@ enum BluetoothMessageType {
   BLUETOOTH_GATT_WRITE_REQUEST = 75,
   BLUETOOTH_GATT_NOTIFY_REQUEST = 78,
   BLUETOOTH_GATT_NOTIFY_DATA_RESPONSE = 79,
+  BLUETOOTH_GATT_ERROR_RESPONSE = 83,
   BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE = 93,
 }
 
@@ -188,6 +189,12 @@ export class EspHomeClientWrapper extends EventEmitter {
     this.messageHandlers.set(
       BluetoothMessageType.BLUETOOTH_GATT_NOTIFY_DATA_RESPONSE,
       this.handleGATTNotifyData.bind(this)
+    );
+
+    // Handle GATT error response
+    this.messageHandlers.set(
+      BluetoothMessageType.BLUETOOTH_GATT_ERROR_RESPONSE,
+      this.handleGATTError.bind(this)
     );
   }
 
@@ -539,6 +546,26 @@ export class EspHomeClientWrapper extends EventEmitter {
       });
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT notify data:', error);
+    }
+  }
+
+  private handleGATTError(payload: Buffer): void {
+    try {
+      const fields = this.decodeProtobuf(payload);
+      
+      const address = this.extractNumberField(fields, 1) || 0;
+      const error = this.extractNumberField(fields, 2) || 0;
+
+      this.emit('message.BluetoothGATTErrorResponse', {
+        address,
+        error,
+      });
+
+      logWarn(
+        `[ESPHomeClientWrapper] GATT error for device ${address.toString(16)}: error code ${error}`
+      );
+    } catch (error) {
+      logError('[ESPHomeClientWrapper] Error parsing GATT error response:', error);
     }
   }
 

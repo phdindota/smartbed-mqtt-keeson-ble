@@ -71,6 +71,9 @@ describe('BLEDevice', () => {
       const connectPromise1 = bleDevice.connect();
       const connectPromise2 = bleDevice.connect();
 
+      // Wait a bit for the second promise to start waiting
+      await Promise.resolve();
+      
       // Simulate successful connection response
       connectionResponseHandler({ address: advertisement.address, connected: true });
 
@@ -99,7 +102,9 @@ describe('BLEDevice', () => {
       );
 
       const connectPromise = bleDevice.connect();
-      await connectPromise;
+      
+      // Expect the promise to be rejected since connect failed
+      await expect(connectPromise).rejects.toThrow('Connection failed');
 
       // Should have called connectBluetoothDeviceService once and failed
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
@@ -117,8 +122,8 @@ describe('BLEDevice', () => {
         new Error('Connection failed')
       );
 
-      // First attempt
-      await bleDevice.connect();
+      // First attempt - should reject
+      await expect(bleDevice.connect()).rejects.toThrow('Connection failed');
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
 
       // Trigger retries
@@ -135,8 +140,8 @@ describe('BLEDevice', () => {
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
 
-      // Fourth attempt should be prevented
-      await bleDevice.connect();
+      // Fourth attempt should be prevented with error
+      await expect(bleDevice.connect()).rejects.toThrow('Maximum connection attempts');
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
     });
 
@@ -147,7 +152,8 @@ describe('BLEDevice', () => {
       // Advance timer by timeout duration (10 seconds)
       jest.advanceTimersByTime(10000);
       
-      await connectPromise;
+      // Should reject due to timeout
+      await expect(connectPromise).rejects.toThrow('Connection timeout');
       
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
       
@@ -165,8 +171,8 @@ describe('BLEDevice', () => {
         .mockRejectedValueOnce(new Error('Connection failed'))
         .mockResolvedValue(undefined);
 
-      // First attempt - fails
-      await bleDevice.connect();
+      // First attempt - fails and rejects
+      await expect(bleDevice.connect()).rejects.toThrow('Connection failed');
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
 
       // Retry 1 - fails
@@ -174,7 +180,7 @@ describe('BLEDevice', () => {
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(2);
 
-      // Retry 2 - succeeds
+      // Retry 2 - succeeds (service call doesn't throw)
       jest.advanceTimersByTime(2000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
@@ -190,7 +196,9 @@ describe('BLEDevice', () => {
       mockConnection.connectBluetoothDeviceService.mockClear();
       
       // New connection should work
-      await bleDevice.connect();
+      const newConnectPromise = bleDevice.connect();
+      connectionResponseHandler({ address: advertisement.address, connected: true });
+      await newConnectPromise;
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
     });
   });
@@ -201,8 +209,8 @@ describe('BLEDevice', () => {
         new Error('Connection failed')
       );
 
-      // Start connection attempt
-      await bleDevice.connect();
+      // Start connection attempt - should reject
+      await expect(bleDevice.connect()).rejects.toThrow('Connection failed');
 
       // Disconnect before retry
       await bleDevice.disconnect();

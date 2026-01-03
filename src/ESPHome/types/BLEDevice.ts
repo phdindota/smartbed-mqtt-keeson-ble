@@ -15,6 +15,9 @@ export class BLEDevice implements IBLEDevice {
   private readonly INITIAL_RETRY_DELAY_MS = 1000;
   private connectionTimeout?: NodeJS.Timeout;
   private retryTimeout?: NodeJS.Timeout;
+  private connectionPromise?: Promise<void>;
+  private connectionPromiseResolve?: (value: void | PromiseLike<void>) => void;
+  private connectionPromiseReject?: (reason?: any) => void;
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -51,12 +54,17 @@ export class BLEDevice implements IBLEDevice {
       clearTimeout(this.retryTimeout);
     }
     
-    this.retryTimeout = setTimeout(() => void this.connect(), delay);
+    this.retryTimeout = setTimeout(() => {
+      // Retry connection - catch any errors to prevent unhandled rejections
+      this.connect().catch((error) => {
+        logWarn(`[BLEDevice] Retry failed for device ${this.mac}:`, error);
+      });
+    }, delay);
   }
 
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper) {
     this.mac = this.address.toString(16).padStart(12, '0');
-    this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected }) => {
+    this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected, mtu: _mtu, error }) => {
       if (this.address !== address) return;
       
       // Update connection state based on response
@@ -64,19 +72,46 @@ export class BLEDevice implements IBLEDevice {
         this.connected = true;
         this.connecting = false;
         this.connectionAttempts = 0;
+        this.connectionPromise = undefined;
         if (this.connectionTimeout) {
           clearTimeout(this.connectionTimeout);
           this.connectionTimeout = undefined;
         }
         logInfo(`[BLEDevice] Device ${this.mac} connected successfully`);
+        
+        // Resolve the connection promise if waiting
+        if (this.connectionPromiseResolve) {
+          this.connectionPromiseResolve();
+          this.connectionPromiseResolve = undefined;
+          this.connectionPromiseReject = undefined;
+        }
+        
+        // Pair if needed (after connection is confirmed)
+        if (this.paired) {
+          this.pair().catch((error) => {
+            logWarn(`[BLEDevice] Pairing failed for device ${this.mac}:`, error);
+          });
+        }
       } else {
         this.connected = false;
         this.connecting = false;
+        this.connectionPromise = undefined;
         if (this.connectionTimeout) {
           clearTimeout(this.connectionTimeout);
           this.connectionTimeout = undefined;
         }
-        logInfo(`[BLEDevice] Device ${this.mac} disconnected`);
+        
+        const errorMsg = error !== undefined 
+          ? `Connection failed with error code ${error}`
+          : 'Connection failed';
+        logInfo(`[BLEDevice] Device ${this.mac} disconnected: ${errorMsg}`);
+        
+        // Reject the connection promise if waiting
+        if (this.connectionPromiseReject) {
+          this.connectionPromiseReject(new Error(errorMsg));
+          this.connectionPromiseResolve = undefined;
+          this.connectionPromiseReject = undefined;
+        }
       }
     });
   }
@@ -87,10 +122,10 @@ export class BLEDevice implements IBLEDevice {
   };
 
   connect = async () => {
-    // Prevent multiple simultaneous connection attempts
-    if (this.connecting) {
-      logWarn(`[BLEDevice] Connection attempt already in progress for device ${this.mac}`);
-      return;
+    // If already connecting, return the existing promise
+    if (this.connecting && this.connectionPromise) {
+      logWarn(`[BLEDevice] Connection attempt already in progress for device ${this.mac}, waiting for it to complete`);
+      return this.connectionPromise;
     }
 
     // Check if already connected
@@ -101,46 +136,75 @@ export class BLEDevice implements IBLEDevice {
 
     // Check retry limit
     if (this.connectionAttempts >= this.MAX_CONNECTION_ATTEMPTS) {
-      logWarn(`[BLEDevice] Maximum connection attempts (${this.MAX_CONNECTION_ATTEMPTS}) reached for device ${this.mac}`);
-      return;
+      const error = `Maximum connection attempts (${this.MAX_CONNECTION_ATTEMPTS}) reached for device ${this.mac}`;
+      logWarn(`[BLEDevice] ${error}`);
+      throw new Error(error);
     }
 
     this.connecting = true;
     this.connectionAttempts++;
 
-    try {
-      const { addressType } = this.advertisement;
-      logInfo(`[BLEDevice] Connecting to device ${this.mac} (attempt ${this.connectionAttempts}/${this.MAX_CONNECTION_ATTEMPTS})`);
-      
-      // Set connection timeout
-      this.connectionTimeout = setTimeout(() => {
-        // Clear the timeout reference first to prevent race conditions
-        this.connectionTimeout = undefined;
-        this.connecting = false;
-        logWarn(`[BLEDevice] Connection timeout for device ${this.mac}`);
-        
-        // Retry on timeout if under the maximum attempt limit
-        this.scheduleRetry('after timeout');
-      }, 10000); // 10 second timeout
+    this.connectionPromise = new Promise<void>((resolve, reject) => {
+      // Store resolve/reject for the connection response handler
+      this.connectionPromiseResolve = resolve;
+      this.connectionPromiseReject = reject;
 
-      await this.connection.connectBluetoothDeviceService(this.address, addressType);
-      
-      // Note: Don't set this.connected = true here
-      // Wait for BluetoothDeviceConnectionResponse to confirm connection
-      
-      if (this.paired) await this.pair();
-    } catch (error) {
-      this.connecting = false;
-      if (this.connectionTimeout) {
-        clearTimeout(this.connectionTimeout);
-        this.connectionTimeout = undefined;
-      }
-      
-      logWarn(`[BLEDevice] Failed to connect to device ${this.mac}:`, error);
-      
-      // Schedule retry with exponential backoff
-      this.scheduleRetry('after error');
-    }
+      const performConnect = async () => {
+        try {
+          const { addressType } = this.advertisement;
+          logInfo(`[BLEDevice] Connecting to device ${this.mac} (attempt ${this.connectionAttempts}/${this.MAX_CONNECTION_ATTEMPTS})`);
+          
+          // Set connection timeout
+          this.connectionTimeout = setTimeout(() => {
+            // Clear the timeout reference first to prevent race conditions
+            this.connectionTimeout = undefined;
+            this.connecting = false;
+            this.connectionPromise = undefined;
+            logWarn(`[BLEDevice] Connection timeout for device ${this.mac}`);
+            
+            // Reject the promise
+            if (this.connectionPromiseReject) {
+              this.connectionPromiseReject(new Error('Connection timeout'));
+              this.connectionPromiseResolve = undefined;
+              this.connectionPromiseReject = undefined;
+            }
+            
+            // Retry on timeout if under the maximum attempt limit
+            this.scheduleRetry('after timeout');
+          }, 10000); // 10 second timeout
+
+          await this.connection.connectBluetoothDeviceService(this.address, addressType);
+          
+          // Note: Don't set this.connected = true here
+          // Wait for BluetoothDeviceConnectionResponse to confirm connection
+          // The response handler will resolve/reject the promise
+          // Pairing will be handled in the response handler if needed
+        } catch (error) {
+          this.connecting = false;
+          this.connectionPromise = undefined;
+          if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = undefined;
+          }
+          
+          logWarn(`[BLEDevice] Failed to connect to device ${this.mac}:`, error);
+          
+          // Reject the promise
+          if (this.connectionPromiseReject) {
+            this.connectionPromiseReject(error);
+            this.connectionPromiseResolve = undefined;
+            this.connectionPromiseReject = undefined;
+          }
+          
+          // Schedule retry with exponential backoff
+          this.scheduleRetry('after error');
+        }
+      };
+
+      void performConnect();
+    });
+
+    return this.connectionPromise;
   };
 
   disconnect = async () => {
@@ -148,6 +212,7 @@ export class BLEDevice implements IBLEDevice {
     this.connecting = false;
     this.connected = false;
     this.connectionAttempts = 0;
+    this.connectionPromise = undefined;
     if (this.connectionTimeout) {
       clearTimeout(this.connectionTimeout);
       this.connectionTimeout = undefined;
@@ -157,14 +222,27 @@ export class BLEDevice implements IBLEDevice {
       this.retryTimeout = undefined;
     }
     
+    // Clear any pending connection promise
+    if (this.connectionPromiseReject) {
+      this.connectionPromiseReject(new Error('Disconnected'));
+      this.connectionPromiseResolve = undefined;
+      this.connectionPromiseReject = undefined;
+    }
+    
     await this.connection.disconnectBluetoothDeviceService(this.address);
   };
 
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
+    if (!this.connected) {
+      throw new Error(`Cannot write characteristic: device ${this.mac} is not connected`);
+    }
     await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
   };
 
   getServices = async () => {
+    if (!this.connected) {
+      throw new Error(`Cannot get services: device ${this.mac} is not connected`);
+    }
     if (!this.servicesList) {
       const { servicesList } = await this.connection.listBluetoothGATTServicesService(this.address);
       this.servicesList = servicesList;
@@ -190,6 +268,9 @@ export class BLEDevice implements IBLEDevice {
   };
 
   subscribeToCharacteristic = async (handle: number, notify: (data: Uint8Array) => void) => {
+    if (!this.connected) {
+      throw new Error(`Cannot subscribe to characteristic: device ${this.mac} is not connected`);
+    }
     this.connection.on('message.BluetoothGATTNotifyDataResponse', (message) => {
       if (message.address != this.address || message.handle != handle) return;
       notify(new Uint8Array([...Buffer.from(message.data, 'base64')]));
@@ -198,6 +279,9 @@ export class BLEDevice implements IBLEDevice {
   };
 
   readCharacteristic = async (handle: number) => {
+    if (!this.connected) {
+      throw new Error(`Cannot read characteristic: device ${this.mac} is not connected`);
+    }
     const response = await this.connection.readBluetoothGATTCharacteristicService(this.address, handle);
     return new Uint8Array([...Buffer.from(response.data, 'base64')]);
   };
