@@ -422,14 +422,38 @@ export class EspHomeClientWrapper extends EventEmitter {
     }
   }
 
-  private handleBLERawAdvertisements(_payload: Buffer): void {
+  private handleBLERawAdvertisements(payload: Buffer): void {
     try {
-      // TODO: Parse BluetoothLERawAdvertisementsResponse (message type 93)
-      // This is the new message format introduced in ESPHome 2024+
-      // The current implementation uses the deprecated message type 67 which is still working
-      // Full parsing implementation should be added when ESPHome deprecates type 67 entirely
-      // Expected in ESPHome 2025.8.0 or later
-      logInfo('[ESPHomeClientWrapper] Received raw BLE advertisements (message type 93) - not yet fully implemented');
+      const fields = this.decodeProtobuf(payload);
+      
+      // Field 1 contains repeated BluetoothLERawAdvertisement messages
+      const advertisementBuffers = fields.get(1) || [];
+      
+      for (const adBuffer of advertisementBuffers) {
+        const adFields = this.decodeProtobuf(adBuffer);
+        
+        // Extract fields from BluetoothLERawAdvertisement
+        const address = this.extractNumberField(adFields, 1) || 0;
+        const rssi = this.decodeSignedVarint(adFields.get(2)?.[0] || Buffer.alloc(0));
+        const addressType = this.extractNumberField(adFields, 3) || 0;
+        const rawData = this.extractBytesField(adFields, 4) || Buffer.alloc(0);
+        
+        // Parse the raw advertising data
+        const parsedData = this.parseAdvertisingData(rawData);
+        
+        // Convert to BLEAdvertisement format and emit
+        const advertisement: BLEAdvertisement = {
+          name: parsedData.name,
+          address,
+          rssi,
+          manufacturerDataList: parsedData.manufacturerDataList,
+          serviceDataList: parsedData.serviceDataList,
+          serviceUuidsList: parsedData.serviceUuidsList,
+          addressType,
+        };
+        
+        this.emit('message.BluetoothLEAdvertisementResponse', advertisement);
+      }
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing raw BLE advertisements:', error);
     }
@@ -522,13 +546,16 @@ export class EspHomeClientWrapper extends EventEmitter {
 
   private encodeVarint(value: number): Buffer {
     const bytes: number[] = [];
-    let val = value >>> 0; // Convert to unsigned 32-bit
-
-    while (val > 0x7f) {
-      bytes.push((val & 0x7f) | 0x80);
-      val >>>= 7;
+    
+    // Handle values up to JavaScript's safe integer range (2^53 - 1)
+    // Don't use bitwise operators for large values as they truncate to 32 bits
+    let remaining = value;
+    
+    while (remaining > 127) {
+      bytes.push((remaining & 0x7f) | 0x80);
+      remaining = Math.floor(remaining / 128);
     }
-    bytes.push(val);
+    bytes.push(remaining & 0x7f);
 
     return Buffer.from(bytes);
   }
@@ -607,7 +634,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       const byte = buffer[offset + bytesRead];
       bytesRead++;
 
-      value |= (byte & 0x7f) << shift;
+      // For shifts >= 32, use multiplication instead of bit shifting
+      if (shift < 28) {
+        value |= (byte & 0x7f) << shift;
+      } else {
+        value += (byte & 0x7f) * Math.pow(2, shift);
+      }
       shift += 7;
 
       if ((byte & 0x80) === 0) {
@@ -615,7 +647,15 @@ export class EspHomeClientWrapper extends EventEmitter {
       }
     }
 
-    return [value >>> 0, bytesRead];
+    return [value, bytesRead];
+  }
+
+  private decodeSignedVarint(buffer: Buffer): number {
+    if (buffer.length === 0) return 0;
+    
+    const [value] = this.readVarint(buffer, 0);
+    // ZigZag decoding: (n >>> 1) ^ -(n & 1)
+    return (value >>> 1) ^ -(value & 1);
   }
 
   private extractNumberField(fields: Map<number, Buffer[]>, fieldNumber: number): number | undefined {
@@ -748,6 +788,106 @@ export class EspHomeClientWrapper extends EventEmitter {
     // Format as UUID string
     const hex = high.toString(16).padStart(16, '0') + low.toString(16).padStart(16, '0');
     return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
+  }
+
+  private parseAdvertisingData(rawData: Buffer): {
+    name: string;
+    serviceUuidsList: string[];
+    manufacturerDataList: BLEData[];
+    serviceDataList: BLEData[];
+  } {
+    let name = '';
+    const serviceUuidsList: string[] = [];
+    const manufacturerDataList: BLEData[] = [];
+    const serviceDataList: BLEData[] = [];
+    
+    let offset = 0;
+    
+    while (offset < rawData.length) {
+      // Each AD structure: [length][type][data...]
+      const length = rawData[offset];
+      offset++;
+      
+      if (length === 0 || offset + length > rawData.length) {
+        // Invalid or padding
+        break;
+      }
+      
+      const adType = rawData[offset];
+      offset++;
+      
+      const dataLength = length - 1; // length includes type byte
+      const data = rawData.subarray(offset, offset + dataLength);
+      offset += dataLength;
+      
+      switch (adType) {
+        case 0x08: // Shortened Local Name
+        case 0x09: // Complete Local Name
+          name = data.toString('utf8');
+          break;
+          
+        case 0x02: // Incomplete List of 16-bit Service UUIDs
+        case 0x03: // Complete List of 16-bit Service UUIDs
+          for (let i = 0; i < data.length; i += 2) {
+            const uuid16 = data.readUInt16LE(i);
+            serviceUuidsList.push(this.formatShortUuid(uuid16));
+          }
+          break;
+          
+        case 0x04: // Incomplete List of 32-bit Service UUIDs
+        case 0x05: // Complete List of 32-bit Service UUIDs
+          for (let i = 0; i < data.length; i += 4) {
+            const uuid32 = data.readUInt32LE(i);
+            serviceUuidsList.push(this.formatShortUuid(uuid32));
+          }
+          break;
+          
+        case 0x06: // Incomplete List of 128-bit Service UUIDs
+        case 0x07: // Complete List of 128-bit Service UUIDs
+          for (let i = 0; i < data.length; i += 16) {
+            const uuid128 = data.subarray(i, i + 16);
+            serviceUuidsList.push(this.parseUuid128(uuid128));
+          }
+          break;
+          
+        case 0xFF: // Manufacturer Specific Data
+          if (data.length >= 2) {
+            const companyId = data.readUInt16LE(0);
+            const manufacturerData = data.subarray(2);
+            manufacturerDataList.push({
+              uuid: companyId.toString(16).padStart(4, '0'),
+              legacyDataList: new Uint8Array(manufacturerData),
+              data: manufacturerData.toString('base64'),
+            });
+          }
+          break;
+          
+        case 0x16: // Service Data - 16-bit UUID
+          if (data.length >= 2) {
+            const serviceUuid16 = data.readUInt16LE(0);
+            const serviceData = data.subarray(2);
+            serviceDataList.push({
+              uuid: this.formatShortUuid(serviceUuid16),
+              legacyDataList: new Uint8Array(serviceData),
+              data: serviceData.toString('base64'),
+            });
+          }
+          break;
+          
+        // We can add more AD types as needed:
+        // 0x01: Flags
+        // 0x20: Service Data - 32-bit UUID
+        // 0x21: Service Data - 128-bit UUID
+        // etc.
+      }
+    }
+    
+    return {
+      name,
+      serviceUuidsList,
+      manufacturerDataList,
+      serviceDataList,
+    };
   }
 
   private sendMessage(type: number, payload: Buffer): void {
