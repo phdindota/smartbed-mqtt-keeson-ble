@@ -64,7 +64,7 @@ export class BLEDevice implements IBLEDevice {
 
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper) {
     this.mac = this.address.toString(16).padStart(12, '0');
-    this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected, error }) => {
+    this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected, mtu: _mtu, error }) => {
       if (this.address !== address) return;
       
       // Update connection state based on response
@@ -84,6 +84,13 @@ export class BLEDevice implements IBLEDevice {
           this.connectionPromiseResolve();
           this.connectionPromiseResolve = undefined;
           this.connectionPromiseReject = undefined;
+        }
+        
+        // Pair if needed (after connection is confirmed)
+        if (this.paired) {
+          this.pair().catch((error) => {
+            logWarn(`[BLEDevice] Pairing failed for device ${this.mac}:`, error);
+          });
         }
       } else {
         this.connected = false;
@@ -171,8 +178,7 @@ export class BLEDevice implements IBLEDevice {
           // Note: Don't set this.connected = true here
           // Wait for BluetoothDeviceConnectionResponse to confirm connection
           // The response handler will resolve/reject the promise
-          
-          if (this.paired) await this.pair();
+          // Pairing will be handled in the response handler if needed
         } catch (error) {
           this.connecting = false;
           this.connectionPromise = undefined;
