@@ -10,6 +10,7 @@ export interface IBLEDevice {
   pair(): Promise<void>;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  cleanup(): void;
   writeCharacteristic(handle: number, bytes: Uint8Array, response?: boolean): Promise<void>;
   getCharacteristic(
     serviceUuid: string,
