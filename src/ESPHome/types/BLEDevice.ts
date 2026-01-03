@@ -1,4 +1,5 @@
-import { BluetoothGATTService, Connection } from '@2colors/esphome-native-api';
+import { BluetoothGATTService } from '../EspHomeClientWrapper';
+import { EspHomeClientWrapper } from '../EspHomeClientWrapper';
 import { Dictionary } from '@utils/Dictionary';
 import { BLEAdvertisement } from './BLEAdvertisement';
 import { BLEDeviceInfo } from './BLEDeviceInfo';
@@ -25,7 +26,7 @@ export class BLEDevice implements IBLEDevice {
     return this.advertisement.serviceUuidsList;
   }
 
-  constructor(public name: string, public advertisement: BLEAdvertisement, private connection: Connection) {
+  constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper) {
     this.mac = this.address.toString(16).padStart(12, '0');
     this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected }) => {
       if (this.address !== address || this.connected === connected) return;

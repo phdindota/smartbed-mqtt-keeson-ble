@@ -1,4 +1,4 @@
-import { Connection } from '@2colors/esphome-native-api';
+import { EspHomeClientWrapper } from './EspHomeClientWrapper';
 import { Deferred } from '@utils/deferred';
 import { logInfo, logWarn, logError } from '@utils/logger';
 import { IESPConnection } from './IESPConnection';
@@ -17,7 +17,7 @@ export class ESPConnection implements IESPConnection {
   }>;
 
   constructor(
-    private connections: Connection[],
+    private connections: EspHomeClientWrapper[],
     configs?: Array<{
       host: string;
       port?: number;
@@ -34,10 +34,9 @@ export class ESPConnection implements IESPConnection {
       this.connectionConfigs = connections.map((conn) => ({
         host: conn.host,
         port: conn.port,
-        password: conn.password,
       }));
     }
-    
+
     // Set up error handlers for each connection
     this.setupErrorHandlers();
   }
@@ -47,7 +46,7 @@ export class ESPConnection implements IESPConnection {
       // Handle unknown message types gracefully
       connection.on('error', (error: any) => {
         const errorMessage = error?.message || String(error);
-        
+
         if (errorMessage.includes('Failed find message type for Id:')) {
           logWarn(`[ESPHome] Unknown message type on ${connection.host}:`, errorMessage);
           // Don't crash, just log the warning
@@ -55,7 +54,7 @@ export class ESPConnection implements IESPConnection {
           logError(`[ESPHome] Connection error on ${connection.host}:`, error);
         }
       });
-      
+
       // Handle disconnection events
       connection.on('disconnected', () => {
         logWarn(`[ESPHome] Disconnected from ${connection.host}`);
@@ -66,17 +65,15 @@ export class ESPConnection implements IESPConnection {
   async reconnect(): Promise<void> {
     this.disconnect();
     logInfo('[ESPHome] Reconnecting...');
-    
+
     try {
       this.connections = await Promise.all(
-        this.connectionConfigs.map((config) =>
-          connect(new Connection(config))
-        )
+        this.connectionConfigs.map((config) => connect(new EspHomeClientWrapper(config)))
       );
-      
+
       // Set up error handlers for the new connections
       this.setupErrorHandlers();
-      
+
       logInfo('[ESPHome] Reconnection successful');
     } catch (error) {
       logError('[ESPHome] Reconnection failed:', error);
@@ -90,7 +87,6 @@ export class ESPConnection implements IESPConnection {
     for (const connection of this.connections) {
       try {
         connection.disconnect();
-        connection.connected = false;
       } catch (error) {
         logWarn('[ESPHome] Error during disconnect:', error);
       }
@@ -106,7 +102,7 @@ export class ESPConnection implements IESPConnection {
     await this.discoverBLEDevices(
       (bleDevice) => {
         const { name, mac, advertisement, address } = bleDevice;
-        
+
         // Skip if we've already accepted this device
         if (seenAddresses.includes(address)) return;
 
@@ -116,10 +112,9 @@ export class ESPConnection implements IESPConnection {
 
         // Skip devices with empty metadata (partial/early advertisements)
         // Wait for a more complete advertisement with service UUIDs or manufacturer data
-        const hasEmptyMetadata = 
-          advertisement.manufacturerDataList.length === 0 && 
-          advertisement.serviceUuidsList.length === 0;
-        
+        const hasEmptyMetadata =
+          advertisement.manufacturerDataList.length === 0 && advertisement.serviceUuidsList.length === 0;
+
         if (hasEmptyMetadata) {
           logInfo(`[ESPHome] Skipping ${name} with empty metadata, waiting for complete advertisement`);
           return;
@@ -145,7 +140,7 @@ export class ESPConnection implements IESPConnection {
     complete: Promise<void>,
     nameMapper?: (name: string) => string
   ) {
-    const listenerBuilder = (connection: Connection) => ({
+    const listenerBuilder = (connection: EspHomeClientWrapper) => ({
       connection,
       listener: (advertisement: BLEAdvertisement) => {
         let { name } = advertisement;
@@ -158,7 +153,8 @@ export class ESPConnection implements IESPConnection {
     });
     const listeners = this.connections.map(listenerBuilder);
     for (const { connection, listener } of listeners) {
-      connection.on('message.BluetoothLEAdvertisementResponse', listener).subscribeBluetoothAdvertisementService();
+      connection.on('message.BluetoothLEAdvertisementResponse', listener);
+      connection.subscribeBluetoothAdvertisementService();
     }
     await complete;
     for (const { connection, listener } of listeners) {

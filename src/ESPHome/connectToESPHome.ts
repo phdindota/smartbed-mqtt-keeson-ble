@@ -1,4 +1,4 @@
-import { Connection } from '@2colors/esphome-native-api';
+import { EspHomeClientWrapper } from './EspHomeClientWrapper';
 import { logInfo, logError, logWarn } from '@utils/logger';
 import { ESPConnection } from './ESPConnection';
 import { IESPConnection } from './IESPConnection';
@@ -9,7 +9,7 @@ export const connectToESPHome = async (): Promise<IESPConnection> => {
   logInfo('[ESPHome] Connecting...');
 
   const proxies = getProxies();
-  
+
   if (proxies.length === 0) {
     logWarn('[ESPHome] No proxies configured, returning empty connection');
     return new ESPConnection([], []);
@@ -18,7 +18,7 @@ export const connectToESPHome = async (): Promise<IESPConnection> => {
   const connections = await Promise.all(
     proxies.map(async (config: BLEProxy) => {
       try {
-        const connection = new Connection(config);
+        const connection = new EspHomeClientWrapper(config);
         return await connect(connection);
       } catch (error) {
         logError(`[ESPHome] Failed to connect to ${config.host}:`, error);
@@ -26,6 +26,6 @@ export const connectToESPHome = async (): Promise<IESPConnection> => {
       }
     })
   );
-  
+
   return new ESPConnection(connections, proxies);
 };

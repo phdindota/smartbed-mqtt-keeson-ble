@@ -12,4 +12,5 @@ export default {
   },
   modulePaths: [compilerOptions.baseUrl], // <-- This will be set to 'baseUrl' value
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths /*, { prefix: '<rootDir>/' } */),
+  transformIgnorePatterns: ['node_modules/(?!(esphome-client)/)'],
 };

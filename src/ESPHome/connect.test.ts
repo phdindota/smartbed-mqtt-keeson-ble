@@ -1,6 +1,9 @@
-import { Connection } from '@2colors/esphome-native-api';
+import { EspHomeClientWrapper } from './EspHomeClientWrapper';
 import { mock } from 'jest-mock-extended';
 import { connect } from './connect';
+
+// Mock esphome-client
+jest.mock('esphome-client');
 
 // Mock the logger functions
 jest.mock('@utils/logger', () => ({
@@ -14,60 +17,74 @@ describe('connect', () => {
     jest.clearAllMocks();
   });
 
-  it('should connect successfully when authorized', async () => {
-    const mockConnection = mock<Connection>();
-    mockConnection.host = 'test-host';
-    mockConnection.port = 6053;
-    mockConnection.password = 'test-password';
+  it('should connect successfully when connected', async () => {
+    const mockConnection = mock<EspHomeClientWrapper>();
+    Object.defineProperty(mockConnection, 'host', { value: 'test-host', writable: false });
+    Object.defineProperty(mockConnection, 'port', { value: 6053, writable: false });
 
-    // Mock deviceInfoService to return Bluetooth proxy features
-    mockConnection.deviceInfoService.mockResolvedValue({
-      bluetoothProxyFeatureFlags: 1,
-    } as any);
+    // Mock connect to succeed
+    mockConnection.connect.mockResolvedValue(undefined);
 
-    // Trigger the 'authorized' event after a short delay
+    // Trigger the 'connected' and 'deviceInfo' events after a short delay
     setTimeout(() => {
-      const authorizedHandler = (mockConnection.once as jest.Mock).mock.calls.find(
-        (call) => call[0] === 'authorized'
+      const connectedHandler = (mockConnection.once as jest.Mock).mock.calls.find(
+        (call) => call[0] === 'connected'
       )?.[1];
-      if (authorizedHandler) authorizedHandler();
+      if (connectedHandler) connectedHandler({ encrypted: true });
+
+      // Trigger deviceInfo event with Bluetooth proxy features
+      const deviceInfoHandler = (mockConnection.once as jest.Mock).mock.calls.find(
+        (call) => call[0] === 'deviceInfo'
+      )?.[1];
+      if (deviceInfoHandler)
+        deviceInfoHandler({
+          bluetoothProxyFeatureFlags: 1,
+        });
     }, 10);
 
     const result = await connect(mockConnection);
 
     expect(result).toBe(mockConnection);
-    expect(mockConnection.deviceInfoService).toHaveBeenCalled();
+    expect(mockConnection.connect).toHaveBeenCalled();
   });
 
   it('should reject when no Bluetooth proxy features detected', async () => {
-    const mockConnection = mock<Connection>();
-    mockConnection.host = 'test-host';
-    mockConnection.port = 6053;
-    mockConnection.password = 'test-password';
+    const mockConnection = mock<EspHomeClientWrapper>();
+    Object.defineProperty(mockConnection, 'host', { value: 'test-host', writable: false });
+    Object.defineProperty(mockConnection, 'port', { value: 6053, writable: false });
 
-    // Mock deviceInfoService to return no Bluetooth proxy features
-    mockConnection.deviceInfoService.mockResolvedValue({
-      bluetoothProxyFeatureFlags: 0,
-    } as any);
+    // Mock connect to succeed
+    mockConnection.connect.mockResolvedValue(undefined);
 
-    // Trigger the 'authorized' event after a short delay
+    // Trigger the 'connected' and 'deviceInfo' events after a short delay
     setTimeout(() => {
-      const authorizedHandler = (mockConnection.once as jest.Mock).mock.calls.find(
-        (call) => call[0] === 'authorized'
+      const connectedHandler = (mockConnection.once as jest.Mock).mock.calls.find(
+        (call) => call[0] === 'connected'
       )?.[1];
-      if (authorizedHandler) authorizedHandler();
+      if (connectedHandler) connectedHandler({ encrypted: true });
+
+      // Trigger deviceInfo event with no Bluetooth proxy features
+      const deviceInfoHandler = (mockConnection.once as jest.Mock).mock.calls.find(
+        (call) => call[0] === 'deviceInfo'
+      )?.[1];
+      if (deviceInfoHandler)
+        deviceInfoHandler({
+          bluetoothProxyFeatureFlags: 0,
+        });
     }, 10);
 
     await expect(connect(mockConnection)).rejects.toThrow('No Bluetooth proxy features detected');
   });
 
   it('should timeout after configured timeout period', async () => {
-    const mockConnection = mock<Connection>();
-    mockConnection.host = 'test-host';
-    mockConnection.port = 6053;
-    mockConnection.password = 'test-password';
+    const mockConnection = mock<EspHomeClientWrapper>();
+    Object.defineProperty(mockConnection, 'host', { value: 'test-host', writable: false });
+    Object.defineProperty(mockConnection, 'port', { value: 6053, writable: false });
 
-    // Don't trigger authorized event - let it timeout
+    // Mock connect to succeed but never trigger events
+    mockConnection.connect.mockResolvedValue(undefined);
+
+    // Don't trigger connected event - let it timeout
     void connect(mockConnection);
 
     // The timeout is 30 seconds, but we can't wait that long in tests
@@ -75,14 +92,16 @@ describe('connect', () => {
     // In a real scenario, this would timeout after 30 seconds
 
     // Since we can't actually wait 30s, we'll just verify the setup is correct
-    expect(mockConnection.once).toHaveBeenCalledWith('authorized', expect.any(Function));
+    expect(mockConnection.once).toHaveBeenCalledWith('connected', expect.any(Function));
   }, 1000);
 
   it('should handle connection errors gracefully', async () => {
-    const mockConnection = mock<Connection>();
-    mockConnection.host = 'test-host';
-    mockConnection.port = 6053;
-    mockConnection.password = 'test-password';
+    const mockConnection = mock<EspHomeClientWrapper>();
+    Object.defineProperty(mockConnection, 'host', { value: 'test-host', writable: false });
+    Object.defineProperty(mockConnection, 'port', { value: 6053, writable: false });
+
+    // Mock connect to succeed
+    mockConnection.connect.mockResolvedValue(undefined);
 
     const testError = new Error('Connection refused');
 
