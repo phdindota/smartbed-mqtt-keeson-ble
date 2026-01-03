@@ -28,10 +28,10 @@ process.on('uncaughtException', async (err) => {
   
   if (isUnknownMessageType) {
     logWarn('[ESPHome] Unknown message type error (non-fatal):', err);
-    logWarn('[ESPHome] Attempting to reconnect...');
     
-    // Try to reconnect the ESPHome connection
+    // Try to reconnect the ESPHome connection if it exists
     if (espHomeConnection) {
+      logWarn('[ESPHome] Attempting to reconnect...');
       try {
         await espHomeConnection.reconnect();
         logWarn('[ESPHome] Reconnection successful, continuing...');
@@ -39,6 +39,8 @@ process.on('uncaughtException', async (err) => {
       } catch (reconnectErr) {
         logError('[ESPHome] Reconnection failed:', reconnectErr);
       }
+    } else {
+      logWarn('[ESPHome] No connection available to reconnect');
     }
   }
   
