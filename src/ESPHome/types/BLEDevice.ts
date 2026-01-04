@@ -229,10 +229,22 @@ export class BLEDevice implements IBLEDevice {
     
     // Listen for ESPHome disconnection and update BLE device state
     this.espHomeDisconnectedListener = () => {
-      if (this.connected) {
+      if (this.connected || this.connecting) {
         logWarn(`[BLEDevice] ESPHome disconnected - marking device ${this.mac} as disconnected`);
         this.connected = false;
         this.connecting = false;
+        
+        // Clear any pending retry timeouts
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
+          this.retryTimeout = undefined;
+        }
+        
+        // Clear connection timeout as well
+        if (this.connectionTimeout) {
+          clearTimeout(this.connectionTimeout);
+          this.connectionTimeout = undefined;
+        }
         
         // Reject any pending connection promise
         if (this.connectionPromiseReject) {
@@ -247,12 +259,28 @@ export class BLEDevice implements IBLEDevice {
     // Listen for ESPHome reconnection
     this.espHomeReconnectedListener = () => {
       logInfo(`[BLEDevice] ESPHome reconnected - device ${this.mac} waiting to be re-discovered`);
+      
+      // Clear any pending retry timeouts to prevent infinite loop
+      if (this.retryTimeout) {
+        clearTimeout(this.retryTimeout);
+        this.retryTimeout = undefined;
+      }
+      
+      // Clear connection timeout as well
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = undefined;
+      }
+      
       // Reset connection attempts so device gets fresh retries
       this.connectionAttempts = 0;
       this.connecting = false;
+      
       // Mark as needing re-discovery
       this.discovered = false;
+      
       // Don't auto-reconnect here - let the controller handle it
+      // The device will be reconnected when it's re-discovered via advertisements
     };
     this.connection.on('reconnected', this.espHomeReconnectedListener);
     
@@ -276,10 +304,19 @@ export class BLEDevice implements IBLEDevice {
   };
 
   markDiscovered = () => {
-    if (!this.discovered) {
-      logInfo(`[BLEDevice] Device ${this.mac} re-discovered after ESPHome reconnect`);
-    }
+    const wasDiscovered = this.discovered;
     this.discovered = true;
+    
+    if (!wasDiscovered) {
+      logInfo(`[BLEDevice] Device ${this.mac} re-discovered after ESPHome reconnect`);
+      
+      // If we were trying to connect before (had a pending connection promise),
+      // trigger a fresh connection attempt now that the device is re-discovered
+      if (this.connectionPromise && !this.connected && !this.connecting) {
+        logInfo(`[BLEDevice] Triggering connection attempt for re-discovered device ${this.mac}`);
+        void this.performConnect();
+      }
+    }
   };
 
   connect = async () => {
