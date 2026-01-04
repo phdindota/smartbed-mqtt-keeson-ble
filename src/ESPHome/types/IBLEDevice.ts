@@ -1,4 +1,4 @@
-import { BluetoothGATTCharacteristic, BluetoothGATTService } from '../EspHomeClientWrapper';
+import { BluetoothGATTCharacteristic, BluetoothGATTService, EspHomeClientWrapper } from '../EspHomeClientWrapper';
 import { BLEAdvertisement } from './BLEAdvertisement';
 import { BLEDeviceInfo } from './BLEDeviceInfo';
 
@@ -11,6 +11,7 @@ export interface IBLEDevice {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   cleanup(): void;
+  updateConnection?(newConnection: EspHomeClientWrapper): void;
   writeCharacteristic(handle: number, bytes: Uint8Array, response?: boolean): Promise<void>;
   getCharacteristic(
     serviceUuid: string,

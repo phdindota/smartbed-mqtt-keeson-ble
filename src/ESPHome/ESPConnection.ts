@@ -75,6 +75,18 @@ export class ESPConnection implements IESPConnection {
       connection.on('disconnected', () => {
         logWarn(`[ESPHome] Disconnected from ${connection.host}`);
       });
+
+      // Handle reconnection events from individual wrappers
+      connection.on('reconnected', async () => {
+        logInfo(`[ESPHome] Connection ${connection.host} reconnected, triggering callback...`);
+        if (this.onReconnectedCallback) {
+          try {
+            await this.onReconnectedCallback();
+          } catch (error) {
+            logError('[ESPHome] Error in reconnection callback:', error);
+          }
+        }
+      });
     }
   }
 

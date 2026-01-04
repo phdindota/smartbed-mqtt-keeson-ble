@@ -120,6 +120,11 @@ export class BLEDevice implements IBLEDevice {
       return;
     }
 
+    // Check if the underlying ESPHome connection is still valid
+    if (!this.connection.isConnected) {
+      throw new Error(`Cannot connect to device ${this.mac} - ESPHome connection is not active`);
+    }
+
     this.connecting = true;
     const { addressType } = this.advertisement;
     
@@ -174,6 +179,42 @@ export class BLEDevice implements IBLEDevice {
     } finally {
       // Reset flag after disconnect completes, even if it throws
       this.intentionalDisconnect = false;
+    }
+  };
+
+  updateConnection = (newConnection: EspHomeClientWrapper) => {
+    // Remove event listeners from old connection
+    this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
+    this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
+    if (this.autoReconnectHandler) {
+      this.connection.off('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
+    }
+    
+    // Clean up notify listeners from old connection
+    for (const listener of this.notifyListeners.values()) {
+      this.connection.off('message.BluetoothGATTNotifyDataResponse', listener);
+    }
+    // Don't clear the map - we'll re-register them on the new connection
+    
+    // Update connection reference
+    this.connection = newConnection;
+    
+    // Reset connection state
+    this.connected = false;
+    this.connecting = false;
+    this.stopKeepalive();
+    
+    // Re-register event listeners on new connection
+    this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
+    this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
+    
+    if (this.autoReconnectHandler) {
+      this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
+    }
+    
+    // Re-register all notify listeners on new connection
+    for (const listener of this.notifyListeners.values()) {
+      this.connection.on('message.BluetoothGATTNotifyDataResponse', listener);
     }
   };
 
