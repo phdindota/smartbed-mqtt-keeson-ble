@@ -88,7 +88,11 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
   return () => {
     logInfo('[Keeson] Cleaning up BLE devices...');
     for (const bleDevice of bleDevices) {
-      bleDevice.cleanup();
+      try {
+        bleDevice.cleanup();
+      } catch (error) {
+        logError('[Keeson] Error cleaning up BLE device:', error);
+      }
     }
   };
 };

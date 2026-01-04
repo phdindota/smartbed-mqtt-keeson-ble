@@ -73,7 +73,11 @@ const initializeKeeson = async () => {
   // Clean up old devices if they exist
   if (keesonCleanup) {
     logInfo('[Keeson] Cleaning up old devices before re-initialization...');
-    keesonCleanup();
+    try {
+      keesonCleanup();
+    } catch (error) {
+      logError('[Keeson] Error during cleanup, continuing with re-initialization:', error);
+    }
     keesonCleanup = null;
   }
   
