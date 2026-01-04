@@ -42,6 +42,38 @@ enum WireType {
 // Constants
 const NULL_UUID = '00000000-0000-0000-0000-000000000000';
 
+// Message types we handle ourselves - suppress warnings from esphome-client
+// These are Bluetooth proxy message types that esphome-client doesn't have built-in handlers for,
+// but we handle them via the 'message' event in our setupBluetoothMessageHandlers() method.
+const SUPPRESSED_MESSAGE_TYPES = [67, 69, 71, 72, 74, 79, 81, 83, 93, 126];
+
+/**
+ * Create a filtered logger that suppresses warnings for known Bluetooth message types.
+ * The esphome-client library logs "Unhandled message type: X" warnings for message types
+ * it doesn't have built-in handlers for, but these messages are still emitted via the
+ * 'message' event for custom handling. This filter suppresses those warnings for message
+ * types we handle ourselves.
+ */
+const createFilteredLogger = () => ({
+  debug: logInfo,
+  info: logInfo,
+  warn: (message: string, ...args: any[]) => {
+    // Suppress "Unhandled message type" warnings for types we handle
+    if (message && typeof message === 'string' && message.includes('Unhandled message type:')) {
+      // Extract the message type number
+      const match = message.match(/Unhandled message type:\s*(\d+)/);
+      if (match) {
+        const messageType = parseInt(match[1], 10);
+        if (SUPPRESSED_MESSAGE_TYPES.includes(messageType)) {
+          return; // Silently suppress this warning
+        }
+      }
+    }
+    logWarn(message, ...args);
+  },
+  error: logError,
+});
+
 // BLE data structure
 export interface BLEData {
   uuid: string;
@@ -114,12 +146,7 @@ export class EspHomeClientWrapper extends EventEmitter {
       psk: config.encryptionKey,
       clientId: 'smartbed-mqtt-keeson-ble',
       serverName: config.expectedServerName,
-      logger: {
-        debug: logInfo, // Map debug to info since we don't have a separate debug logger
-        info: logInfo,
-        warn: logWarn,
-        error: logError,
-      },
+      logger: createFilteredLogger(),
     });
 
     // Set up event forwarding and message handling

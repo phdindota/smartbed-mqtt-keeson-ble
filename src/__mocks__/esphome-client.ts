@@ -4,11 +4,13 @@ import { EventEmitter } from 'events';
 export class EspHomeClient extends EventEmitter {
   host: string;
   port: number;
+  logger: any;
   
   constructor(options: any) {
     super();
     this.host = options.host;
     this.port = options.port || 6053;
+    this.logger = options.logger;
   }
   
   async connect() {

@@ -612,6 +612,99 @@ describe('EspHomeClientWrapper', () => {
       expect(receivedAdvertisements[1].address).toBe(222);
     });
   });
+
+  describe('filtered logger', () => {
+    let wrapper: EspHomeClientWrapper;
+    let consoleWarnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      // Spy on console.warn to verify suppression
+      consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should suppress warnings for known Bluetooth message types', () => {
+      // Get the logger that was passed to EspHomeClient
+      const logger = (wrapper as any).client.logger;
+
+      // Test suppression for message type 93 (BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE)
+      logger.warn('Unhandled message type: 93');
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+      // Test suppression for message type 69 (BLUETOOTH_DEVICE_CONNECTION_RESPONSE)
+      logger.warn('Unhandled message type: 69');
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+      // Test suppression for message type 71 (BLUETOOTH_GATT_GET_SERVICES_RESPONSE)
+      logger.warn('Unhandled message type: 71');
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+      // Test suppression for message type 126 (BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE)
+      logger.warn('Unhandled message type: 126');
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not suppress warnings for unknown message types', () => {
+      // Get the logger that was passed to EspHomeClient
+      const logger = (wrapper as any).client.logger;
+
+      // Test that warnings for non-suppressed message types are still logged
+      logger.warn('Unhandled message type: 999');
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Unhandled message type: 999')
+      );
+    });
+
+    it('should not suppress other warning messages', () => {
+      // Get the logger that was passed to EspHomeClient
+      const logger = (wrapper as any).client.logger;
+
+      // Test that other warnings are not suppressed
+      logger.warn('Some other warning message');
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Some other warning message')
+      );
+    });
+
+    it('should handle warnings with additional arguments', () => {
+      // Get the logger that was passed to EspHomeClient
+      const logger = (wrapper as any).client.logger;
+
+      // Test that warnings with additional arguments are logged correctly
+      logger.warn('Non-Bluetooth warning', { extra: 'data' });
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Non-Bluetooth warning'),
+        { extra: 'data' }
+      );
+    });
+
+    it('should suppress all known Bluetooth message types', () => {
+      // Get the logger that was passed to EspHomeClient
+      const logger = (wrapper as any).client.logger;
+
+      // Test all suppressed message types: 67, 69, 71, 72, 74, 79, 81, 83, 93, 126
+      const suppressedTypes = [67, 69, 71, 72, 74, 79, 81, 83, 93, 126];
+      
+      for (const type of suppressedTypes) {
+        logger.warn(`Unhandled message type: ${type}`);
+      }
+
+      // None of these should have been logged
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // Helper functions to encode protobuf messages for testing
