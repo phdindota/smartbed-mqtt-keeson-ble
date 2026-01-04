@@ -43,10 +43,6 @@ export class BLEDevice implements IBLEDevice {
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper, private stayConnected = false) {
     this.mac = this.address.toString(16).padStart(12, '0');
     
-    // Listen for GATT error events to detect disconnections
-    this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
-    this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
-    
     // Auto-reconnect when device disconnects (matching richardhopton/smartbed-mqtt behavior)
     // Only reconnect if it's not an intentional disconnect
     this.autoReconnectHandler = ({ address, connected }) => {
@@ -54,7 +50,9 @@ export class BLEDevice implements IBLEDevice {
       if (this.intentionalDisconnect) return;
       void this.connect();
     };
-    this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
+    
+    // Register event listeners
+    this.registerEventListeners();
   }
 
   pair = async () => {
@@ -182,44 +180,7 @@ export class BLEDevice implements IBLEDevice {
     }
   };
 
-  updateConnection = (newConnection: EspHomeClientWrapper) => {
-    // Remove event listeners from old connection
-    this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
-    this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
-    if (this.autoReconnectHandler) {
-      this.connection.off('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
-    }
-    
-    // Clean up notify listeners from old connection
-    for (const listener of this.notifyListeners.values()) {
-      this.connection.off('message.BluetoothGATTNotifyDataResponse', listener);
-    }
-    // Don't clear the map - we'll re-register them on the new connection
-    
-    // Update connection reference
-    this.connection = newConnection;
-    
-    // Reset connection state
-    this.connected = false;
-    this.connecting = false;
-    this.stopKeepalive();
-    
-    // Re-register event listeners on new connection
-    this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
-    this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
-    
-    if (this.autoReconnectHandler) {
-      this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
-    }
-    
-    // Re-register all notify listeners on new connection
-    for (const listener of this.notifyListeners.values()) {
-      this.connection.on('message.BluetoothGATTNotifyDataResponse', listener);
-    }
-  };
-
-  cleanup = () => {
-    this.stopKeepalive();
+  private removeEventListeners = () => {
     this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
     if (this.autoReconnectHandler) {
@@ -230,6 +191,41 @@ export class BLEDevice implements IBLEDevice {
     for (const listener of this.notifyListeners.values()) {
       this.connection.off('message.BluetoothGATTNotifyDataResponse', listener);
     }
+  };
+
+  private registerEventListeners = () => {
+    this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
+    this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
+    
+    if (this.autoReconnectHandler) {
+      this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
+    }
+    
+    // Re-register all notify listeners
+    for (const listener of this.notifyListeners.values()) {
+      this.connection.on('message.BluetoothGATTNotifyDataResponse', listener);
+    }
+  };
+
+  updateConnection = (newConnection: EspHomeClientWrapper) => {
+    // Remove event listeners from old connection
+    this.removeEventListeners();
+    
+    // Update connection reference
+    this.connection = newConnection;
+    
+    // Reset connection state
+    this.connected = false;
+    this.connecting = false;
+    this.stopKeepalive();
+    
+    // Re-register event listeners on new connection
+    this.registerEventListeners();
+  };
+
+  cleanup = () => {
+    this.stopKeepalive();
+    this.removeEventListeners();
     this.notifyListeners.clear();
   };
 
