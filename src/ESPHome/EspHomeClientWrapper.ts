@@ -142,6 +142,7 @@ export class EspHomeClientWrapper extends EventEmitter {
   private readonly WRITE_WAIT_RECONNECT_TIMEOUT_MS = 5000;
   private readonly WRITE_WAIT_RECONNECT_POLL_INTERVAL_MS = 100;
   private allowedMacAddresses: Set<number> = new Set();
+  private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
 
   constructor(config: {
     host: string;
@@ -759,7 +760,7 @@ export class EspHomeClientWrapper extends EventEmitter {
       );
 
       // GATT error 13 indicates the device is disconnected
-      if (error === 13) {
+      if (error === this.GATT_ERROR_DEVICE_DISCONNECTED) {
         logWarn(`[ESPHomeClientWrapper] Device ${address.toString(16)} disconnected (GATT error 13)`);
         this.emit('deviceDisconnected', address);
       }

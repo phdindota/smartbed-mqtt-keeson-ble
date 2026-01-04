@@ -17,6 +17,7 @@ export class BLEDevice implements IBLEDevice {
   private readonly KEEPALIVE_INTERVAL_MS = 30000; // 30 seconds
   private readonly GENERIC_ACCESS_SERVICE_UUID = '00001800-0000-1000-8000-00805f9b34fb';
   private readonly DEVICE_NAME_CHARACTERISTIC_UUID = '00002a00-0000-1000-8000-00805f9b34fb';
+  private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
 
   public mac: string;
   public get address() {
@@ -46,7 +47,7 @@ export class BLEDevice implements IBLEDevice {
     if (address !== this.address) return;
     
     // GATT error 13 means device is disconnected
-    if (error === 13) {
+    if (error === this.GATT_ERROR_DEVICE_DISCONNECTED) {
       this.connected = false;
       this.stopKeepalive();
     }
@@ -75,8 +76,11 @@ export class BLEDevice implements IBLEDevice {
         if (characteristic) {
           await this.readCharacteristic(characteristic.handle);
         }
+        // If characteristic is not available, silently skip keepalive
+        // The device may not have Generic Access service
       } catch (error) {
         // Keepalive read failed - device is likely disconnected
+        // Mark as disconnected but don't log to avoid noise
         this.connected = false;
         this.stopKeepalive();
       }
@@ -148,14 +152,18 @@ export class BLEDevice implements IBLEDevice {
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
   };
 
+  private async reconnectIfNeeded(): Promise<void> {
+    if (!this.connected) {
+      await this.connect();
+    }
+  }
+
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
     // Try to reconnect if not connected
-    if (!this.connected) {
-      try {
-        await this.connect();
-      } catch (error) {
-        throw new Error(`Cannot write: failed to reconnect to device ${this.mac}`);
-      }
+    try {
+      await this.reconnectIfNeeded();
+    } catch (error) {
+      throw new Error(`Cannot write: failed to reconnect to device ${this.mac}`);
     }
     
     try {
@@ -164,7 +172,7 @@ export class BLEDevice implements IBLEDevice {
       // If write fails and we're not connected, try to reconnect and retry once
       if (!this.connected) {
         try {
-          await this.connect();
+          await this.reconnectIfNeeded();
           await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
         } catch (retryError) {
           throw new Error(`Write failed after reconnection attempt: ${retryError}`);
