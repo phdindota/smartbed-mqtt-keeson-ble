@@ -25,6 +25,7 @@ export class BLEDevice implements IBLEDevice {
   private readonly GENERIC_ACCESS_SERVICE_UUID = '00001800-0000-1000-8000-00805f9b34fb';
   private readonly DEVICE_NAME_CHARACTERISTIC_UUID = '00002a00-0000-1000-8000-00805f9b34fb';
   private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
+  private autoReconnectHandler: (response: { address: number; connected: boolean }) => void;
 
   public mac: string;
   public get address() {
@@ -43,6 +44,13 @@ export class BLEDevice implements IBLEDevice {
     // Listen for GATT error events to detect disconnections
     this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
+    
+    // Auto-reconnect when device disconnects (matching richardhopton/smartbed-mqtt behavior)
+    this.autoReconnectHandler = ({ address, connected }) => {
+      if (this.address !== address || this.connected === connected) return;
+      void this.connect();
+    };
+    this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
   }
 
   pair = async () => {
@@ -159,6 +167,7 @@ export class BLEDevice implements IBLEDevice {
     this.stopKeepalive();
     this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
+    this.connection.off('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
     
     // Clean up all notify listeners
     for (const listener of this.notifyListeners.values()) {

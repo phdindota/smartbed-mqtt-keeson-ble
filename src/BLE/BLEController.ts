@@ -31,6 +31,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
   ) {
     super();
     Object.entries(notifyHandles).forEach(([key, handle]) => {
+      this.stayConnected ||= true;
       void this.bleDevice.subscribeToCharacteristic(handle, (data) => {
         const previous = this.notifyValues[key];
         if (previous && arrayEquals(data, previous)) return;
