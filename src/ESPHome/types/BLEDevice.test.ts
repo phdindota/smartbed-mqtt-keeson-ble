@@ -115,25 +115,25 @@ describe('BLEDevice', () => {
       // Should have called connectBluetoothDeviceService once and failed
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
 
-      // Advance timer by initial retry delay (1000ms)
-      jest.advanceTimersByTime(1000);
+      // Advance timer by initial retry delay (500ms)
+      jest.advanceTimersByTime(500);
 
       // Should have called connectBluetoothDeviceService again (retry)
       await Promise.resolve(); // Allow microtasks to execute
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(2);
       
-      // Advance timer by second retry delay (2000ms)
-      jest.advanceTimersByTime(2000);
+      // Advance timer by second retry delay (1000ms)
+      jest.advanceTimersByTime(1000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
       
-      // Advance timer by third retry delay (4000ms)
-      jest.advanceTimersByTime(4000);
+      // Advance timer by third retry delay (2000ms)
+      jest.advanceTimersByTime(2000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(4);
       
-      // Advance timer by fourth retry delay (8000ms)
-      jest.advanceTimersByTime(8000);
+      // Advance timer by fourth retry delay (4000ms)
+      jest.advanceTimersByTime(4000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(5);
       
@@ -152,23 +152,23 @@ describe('BLEDevice', () => {
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
 
-      // Trigger retry 1 (delay: 1s)
-      jest.advanceTimersByTime(1000);
+      // Trigger retry 1 (delay: 500ms)
+      jest.advanceTimersByTime(500);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(2);
 
-      // Trigger retry 2 (delay: 2s)
-      jest.advanceTimersByTime(2000);
+      // Trigger retry 2 (delay: 1000ms)
+      jest.advanceTimersByTime(1000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
 
-      // Trigger retry 3 (delay: 4s)
-      jest.advanceTimersByTime(4000);
+      // Trigger retry 3 (delay: 2000ms)
+      jest.advanceTimersByTime(2000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(4);
 
-      // Trigger retry 4 (delay: 8s)
-      jest.advanceTimersByTime(8000);
+      // Trigger retry 4 (delay: 4000ms)
+      jest.advanceTimersByTime(4000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(5);
 
@@ -189,14 +189,14 @@ describe('BLEDevice', () => {
       // Don't send connection response to trigger timeout
       const connectPromise = bleDevice.connect();
       
-      // Advance timer by timeout duration (10 seconds)
-      jest.advanceTimersByTime(10000);
+      // Advance timer by timeout duration (5 seconds)
+      jest.advanceTimersByTime(5000);
       await Promise.resolve();
       
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
       
-      // Advance timer by retry delay (1 second) to trigger retry
-      jest.advanceTimersByTime(1000);
+      // Advance timer by retry delay (500ms) to trigger retry
+      jest.advanceTimersByTime(500);
       await Promise.resolve();
       
       // Should have retried
@@ -222,13 +222,13 @@ describe('BLEDevice', () => {
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
 
-      // Retry 1 - fails
-      jest.advanceTimersByTime(1000);
+      // Retry 1 - fails (delay: 500ms)
+      jest.advanceTimersByTime(500);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(2);
 
-      // Retry 2 - succeeds (service call doesn't throw)
-      jest.advanceTimersByTime(2000);
+      // Retry 2 - succeeds (service call doesn't throw) (delay: 1000ms)
+      jest.advanceTimersByTime(1000);
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
 

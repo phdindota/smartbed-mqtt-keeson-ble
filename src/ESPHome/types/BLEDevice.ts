@@ -12,7 +12,7 @@ export class BLEDevice implements IBLEDevice {
   private connecting = false;
   private connectionAttempts = 0;
   private readonly MAX_CONNECTION_ATTEMPTS = 5;
-  private readonly INITIAL_RETRY_DELAY_MS = 1000;
+  private readonly INITIAL_RETRY_DELAY_MS = 500;
   private readonly RECONNECTION_WAIT_DELAY_MS = 1000;
   private connectionTimeout?: NodeJS.Timeout;
   private retryTimeout?: NodeJS.Timeout;
@@ -146,7 +146,7 @@ export class BLEDevice implements IBLEDevice {
         
         // Retry on timeout if under the maximum attempt limit
         this.scheduleRetry('after timeout');
-      }, 10000); // 10 second timeout
+      }, 5000); // 5 second timeout for faster failure detection
 
       await this.connection.connectBluetoothDeviceService(this.address, addressType);
       
