@@ -9,18 +9,13 @@ describe('BLEDevice', () => {
   let mockConnection: jest.Mocked<EspHomeClientWrapper>;
   let advertisement: BLEAdvertisement;
   let bleDevice: BLEDevice;
-  let connectionResponseHandler: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     // Create mock connection
     mockConnection = {
-      on: jest.fn((event, handler) => {
-        if (event === 'message.BluetoothDeviceConnectionResponse') {
-          connectionResponseHandler = handler;
-        }
-      }),
+      on: jest.fn(),
       off: jest.fn(),
       connectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
       disconnectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
@@ -46,14 +41,74 @@ describe('BLEDevice', () => {
   });
 
   describe('connect', () => {
-    it('should connect successfully', async () => {
-      await bleDevice.connect();
+    it('should connect successfully and wait for connection response', async () => {
+      // Start the connect promise
+      const connectPromise = bleDevice.connect();
+
+      // Simulate the connection response
+      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
+      expect(onCall).toBeDefined();
+      const connectionHandler = onCall![1];
+      
+      // Trigger successful connection response
+      connectionHandler({ address: advertisement.address, connected: true });
+
+      // Wait for the promise to resolve
+      await connectPromise;
 
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledWith(
         advertisement.address,
         advertisement.addressType
       );
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
+      expect(mockConnection.off).toHaveBeenCalledWith('message.BluetoothDeviceConnectionResponse', connectionHandler);
+    });
+
+    it('should reject if connection fails', async () => {
+      // Start the connect promise
+      const connectPromise = bleDevice.connect();
+
+      // Simulate the connection response with error
+      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
+      const connectionHandler = onCall![1];
+      
+      // Trigger failed connection response
+      connectionHandler({ address: advertisement.address, connected: false, error: 1 });
+
+      // Wait for the promise to reject
+      await expect(connectPromise).rejects.toThrow('Connection failed for device cfbf8511b3ea: error code 1');
+      expect(mockConnection.off).toHaveBeenCalledWith('message.BluetoothDeviceConnectionResponse', connectionHandler);
+    });
+
+    it('should timeout if no response received', async () => {
+      jest.useFakeTimers();
+      
+      // Start the connect promise
+      const connectPromise = bleDevice.connect();
+
+      // Fast-forward time by 10 seconds
+      jest.advanceTimersByTime(10000);
+
+      // Wait for the promise to reject
+      await expect(connectPromise).rejects.toThrow('Connection timeout for device cfbf8511b3ea');
+      
+      jest.useRealTimers();
+    });
+
+    it('should return immediately if already connected', async () => {
+      // First connect
+      const connectPromise1 = bleDevice.connect();
+      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
+      const connectionHandler = onCall![1];
+      connectionHandler({ address: advertisement.address, connected: true });
+      await connectPromise1;
+
+      // Clear mock calls
+      mockConnection.connectBluetoothDeviceService.mockClear();
+
+      // Second connect should return immediately
+      await bleDevice.connect();
+      expect(mockConnection.connectBluetoothDeviceService).not.toHaveBeenCalled();
     });
   });
 
@@ -66,54 +121,9 @@ describe('BLEDevice', () => {
   });
 
   describe('cleanup', () => {
-    it('should remove event listener to prevent memory leaks', () => {
-      // Call cleanup
-      bleDevice.cleanup();
-      
-      // Verify that the event listener was removed
-      expect(mockConnection.off).toHaveBeenCalledWith(
-        'message.BluetoothDeviceConnectionResponse',
-        expect.any(Function)
-      );
-    });
-  });
-
-  describe('BluetoothDeviceConnectionResponse handler', () => {
-    it('should auto-reconnect on unexpected disconnect', async () => {
-      // First, actually connect the device
-      await bleDevice.connect();
-
-      // Clear previous calls
-      mockConnection.connectBluetoothDeviceService.mockClear();
-
-      // Simulate disconnect response (connected state changes from true to false)
-      connectionResponseHandler({ address: advertisement.address, connected: false });
-      await Promise.resolve();
-
-      // Should automatically reconnect
-      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledWith(
-        advertisement.address,
-        advertisement.addressType
-      );
-    });
-
-    it('should ignore connection responses for other devices', async () => {
-      // Simulate connection response for a different device
-      connectionResponseHandler({ address: 0x123456, connected: true });
-      await Promise.resolve();
-
-      // Should not call connect
-      expect(mockConnection.connectBluetoothDeviceService).not.toHaveBeenCalled();
-    });
-
-    it('should not reconnect if already in the same connection state', async () => {
-      // Device starts disconnected (connected = false)
-      // Simulate another disconnect response (connected = false)
-      connectionResponseHandler({ address: advertisement.address, connected: false });
-      await Promise.resolve();
-
-      // Should not reconnect since already disconnected
-      expect(mockConnection.connectBluetoothDeviceService).not.toHaveBeenCalled();
+    it('should be callable without errors', () => {
+      // Call cleanup - should not throw
+      expect(() => bleDevice.cleanup()).not.toThrow();
     });
   });
 });

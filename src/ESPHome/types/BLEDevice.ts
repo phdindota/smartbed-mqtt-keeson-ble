@@ -8,7 +8,6 @@ import { IBLEDevice } from './IBLEDevice';
 export class BLEDevice implements IBLEDevice {
   private connected = false;
   private paired = false;
-  private connectionResponseListener?: (response: any) => void;
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -28,19 +27,6 @@ export class BLEDevice implements IBLEDevice {
 
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper) {
     this.mac = this.address.toString(16).padStart(12, '0');
-    
-    // Simple auto-reconnect listener for unexpected disconnects
-    this.connectionResponseListener = ({ address, connected }) => {
-      if (this.address !== address || this.connected === connected) return;
-      // Only auto-reconnect if we were previously connected and now disconnected
-      if (!connected) {
-        void this.connect().catch(() => {
-          // Ignore errors in auto-reconnect to prevent infinite loops
-        });
-      }
-    };
-    
-    this.connection.on('message.BluetoothDeviceConnectionResponse', this.connectionResponseListener);
   }
 
   pair = async () => {
@@ -49,12 +35,43 @@ export class BLEDevice implements IBLEDevice {
   };
 
   connect = async () => {
-    const { addressType } = this.advertisement;
-    await this.connection.connectBluetoothDeviceService(this.address, addressType);
-    this.connected = true;
-    if (this.paired) {
-      await this.pair();
+    if (this.connected) {
+      return;
     }
+
+    const { addressType } = this.advertisement;
+    
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
+        reject(new Error(`Connection timeout for device ${this.mac}`));
+      }, 10000);
+
+      const connectionHandler = ({ address, connected, error }: { address: number; connected: boolean; error?: number }) => {
+        if (address !== this.address) return;
+        
+        clearTimeout(timeout);
+        this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
+        
+        if (connected) {
+          this.connected = true;
+          if (this.paired) {
+            this.pair().then(resolve).catch(reject);
+          } else {
+            resolve();
+          }
+        } else {
+          reject(new Error(`Connection failed for device ${this.mac}: error code ${error}`));
+        }
+      };
+
+      this.connection.on('message.BluetoothDeviceConnectionResponse', connectionHandler);
+      this.connection.connectBluetoothDeviceService(this.address, addressType).catch((err) => {
+        clearTimeout(timeout);
+        this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
+        reject(err);
+      });
+    });
   };
 
   disconnect = async () => {
@@ -63,10 +80,7 @@ export class BLEDevice implements IBLEDevice {
   };
 
   cleanup = () => {
-    if (this.connectionResponseListener) {
-      this.connection.off('message.BluetoothDeviceConnectionResponse', this.connectionResponseListener);
-      this.connectionResponseListener = undefined;
-    }
+    // Nothing to clean up now since we don't have persistent listeners
   };
 
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
