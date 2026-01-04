@@ -19,7 +19,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
   private notifyValues: Dictionary<Uint8Array> = {};
   private lastCommands?: number[][];
   private lastCommandTime = 0;
-  private readonly COMMAND_DEBOUNCE_MS = 500; // Minimum time between commands
+  private readonly COMMAND_DEBOUNCE_MS = 500; // Prevent rapid button presses from overwhelming the device
 
   constructor(
     public deviceData: IDeviceData,

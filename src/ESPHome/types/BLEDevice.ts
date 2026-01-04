@@ -30,9 +30,9 @@ export class BLEDevice implements IBLEDevice {
   private commandQueue: Array<() => Promise<void>> = [];
   private processingCommand = false;
   private lastConnectionAttempt = 0;
-  private readonly CONNECTION_COOLDOWN_MS = 1000; // 1 second between connections
-  private readonly CONNECTION_STABILIZATION_MS = 100; // Wait for connection to stabilize
-  private readonly COMMAND_COMPLETION_DELAY_MS = 100; // Wait for command to complete
+  private readonly CONNECTION_COOLDOWN_MS = 1000; // 1 second between connections to prevent ESP32 overload
+  private readonly CONNECTION_STABILIZATION_MS = 100; // Allow BLE connection to stabilize before sending data
+  private readonly COMMAND_COMPLETION_DELAY_MS = 100; // Allow command to be processed before disconnect
 
   public mac: string;
   public get address() {
@@ -237,8 +237,7 @@ export class BLEDevice implements IBLEDevice {
         // Step 5: Gracefully disconnect
         await this.disconnect();
 
-        // Step 6: Cooldown period
-        await new Promise(r => setTimeout(r, this.CONNECTION_COOLDOWN_MS));
+        // Note: Cooldown is enforced by rate limiting at the start of the next command
       } catch (error) {
         // Ensure we disconnect even on error
         try {
