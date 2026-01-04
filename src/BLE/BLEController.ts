@@ -19,6 +19,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
   private notifyValues: Dictionary<Uint8Array> = {};
   private lastCommands?: number[][];
   private disconnectTimeout?: NodeJS.Timeout;
+  private readonly DISCONNECT_TIMEOUT_MS = 60000; // 60 seconds
 
   constructor(
     public deviceData: IDeviceData,
@@ -95,7 +96,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
     }
     this.disconnectTimeout = setTimeout(() => {
       void this.disconnect();
-    }, 60000); // 60 seconds
+    }, this.DISCONNECT_TIMEOUT_MS);
   };
 
   private disconnect = async () => {
