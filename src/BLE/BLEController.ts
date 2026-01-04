@@ -30,6 +30,11 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
     private stayConnected: boolean = false
   ) {
     super();
+    // Auto-set stayConnected to true when notify handles are present
+    if (Object.keys(notifyHandles).length > 0) {
+      this.stayConnected = true;
+    }
+    
     Object.entries(notifyHandles).forEach(([key, handle]) => {
       void this.bleDevice.subscribeToCharacteristic(handle, (data) => {
         const previous = this.notifyValues[key];

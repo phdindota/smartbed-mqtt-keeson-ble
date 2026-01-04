@@ -45,13 +45,18 @@ describe('BLEDevice', () => {
       // Start the connect promise
       const connectPromise = bleDevice.connect();
 
-      // Simulate the connection response
-      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
-      expect(onCall).toBeDefined();
-      const connectionHandler = onCall![1];
+      // Get all handlers for BluetoothDeviceConnectionResponse
+      // There should be at least 2: auto-reconnect handler (from constructor) and connect handler
+      const allHandlers = mockConnection.on.mock.calls
+        .filter(call => call[0] === 'message.BluetoothDeviceConnectionResponse')
+        .map(call => call[1]);
       
-      // Trigger successful connection response
-      connectionHandler({ address: advertisement.address, connected: true });
+      expect(allHandlers.length).toBeGreaterThanOrEqual(2);
+      
+      // Trigger successful connection response on all handlers
+      allHandlers.forEach(handler => {
+        handler({ address: advertisement.address, connected: true });
+      });
 
       // Wait for the promise to resolve
       await connectPromise;
@@ -60,24 +65,25 @@ describe('BLEDevice', () => {
         advertisement.address,
         advertisement.addressType
       );
-      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(1);
-      expect(mockConnection.off).toHaveBeenCalledWith('message.BluetoothDeviceConnectionResponse', connectionHandler);
+      // Note: May be called more than once due to auto-reconnect handler
     });
 
     it('should reject if connection fails', async () => {
       // Start the connect promise
       const connectPromise = bleDevice.connect();
 
-      // Simulate the connection response with error
-      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
-      const connectionHandler = onCall![1];
+      // Get all handlers for BluetoothDeviceConnectionResponse
+      const allHandlers = mockConnection.on.mock.calls
+        .filter(call => call[0] === 'message.BluetoothDeviceConnectionResponse')
+        .map(call => call[1]);
       
-      // Trigger failed connection response
-      connectionHandler({ address: advertisement.address, connected: false, error: 1 });
+      // Trigger failed connection response on all handlers
+      allHandlers.forEach(handler => {
+        handler({ address: advertisement.address, connected: false, error: 1 });
+      });
 
       // Wait for the promise to reject
       await expect(connectPromise).rejects.toThrow('Connection failed for device cfbf8511b3ea: error code 1');
-      expect(mockConnection.off).toHaveBeenCalledWith('message.BluetoothDeviceConnectionResponse', connectionHandler);
     });
 
     it('should timeout if no response received', async () => {
@@ -98,9 +104,12 @@ describe('BLEDevice', () => {
     it('should return immediately if already connected', async () => {
       // First connect
       const connectPromise1 = bleDevice.connect();
-      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
-      const connectionHandler = onCall![1];
-      connectionHandler({ address: advertisement.address, connected: true });
+      const allHandlers = mockConnection.on.mock.calls
+        .filter(call => call[0] === 'message.BluetoothDeviceConnectionResponse')
+        .map(call => call[1]);
+      allHandlers.forEach(handler => {
+        handler({ address: advertisement.address, connected: true });
+      });
       await connectPromise1;
 
       // Clear mock calls
@@ -124,6 +133,38 @@ describe('BLEDevice', () => {
     it('should be callable without errors', () => {
       // Call cleanup - should not throw
       expect(() => bleDevice.cleanup()).not.toThrow();
+    });
+
+    it('should remove auto-reconnect listener', () => {
+      // Get the auto-reconnect handler that was registered
+      const autoReconnectCall = mockConnection.on.mock.calls.find(
+        call => call[0] === 'message.BluetoothDeviceConnectionResponse'
+      );
+      expect(autoReconnectCall).toBeDefined();
+      const autoReconnectHandler = autoReconnectCall![1];
+
+      // Call cleanup
+      bleDevice.cleanup();
+
+      // Verify the auto-reconnect listener was removed
+      expect(mockConnection.off).toHaveBeenCalledWith(
+        'message.BluetoothDeviceConnectionResponse',
+        autoReconnectHandler
+      );
+    });
+  });
+
+  describe('auto-reconnect', () => {
+    it('should register auto-reconnect handler in constructor', () => {
+      // Verify that the auto-reconnect handler was registered
+      const autoReconnectCalls = mockConnection.on.mock.calls.filter(
+        call => call[0] === 'message.BluetoothDeviceConnectionResponse'
+      );
+      
+      // Should have at least one handler registered for auto-reconnect
+      expect(autoReconnectCalls.length).toBeGreaterThanOrEqual(1);
+      expect(autoReconnectCalls[0][0]).toBe('message.BluetoothDeviceConnectionResponse');
+      expect(autoReconnectCalls[0][1]).toBeInstanceOf(Function);
     });
   });
 

@@ -13,6 +13,7 @@ interface BluetoothGATTNotifyDataMessage {
 
 export class BLEDevice implements IBLEDevice {
   private connected = false;
+  private connecting = false;
   private paired = false;
   private notifyListeners: Map<number, (message: BluetoothGATTNotifyDataMessage) => void> = new Map();
 
@@ -25,6 +26,8 @@ export class BLEDevice implements IBLEDevice {
   private readonly GENERIC_ACCESS_SERVICE_UUID = '00001800-0000-1000-8000-00805f9b34fb';
   private readonly DEVICE_NAME_CHARACTERISTIC_UUID = '00002a00-0000-1000-8000-00805f9b34fb';
   private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
+  private autoReconnectHandler?: (response: { address: number; connected: boolean }) => void;
+  private intentionalDisconnect = false;
 
   public mac: string;
   public get address() {
@@ -43,6 +46,15 @@ export class BLEDevice implements IBLEDevice {
     // Listen for GATT error events to detect disconnections
     this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
+    
+    // Auto-reconnect when device disconnects (matching richardhopton/smartbed-mqtt behavior)
+    // Only reconnect if it's not an intentional disconnect
+    this.autoReconnectHandler = ({ address, connected }) => {
+      if (this.address !== address || this.connected === connected) return;
+      if (this.intentionalDisconnect) return;
+      void this.connect();
+    };
+    this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
   }
 
   pair = async () => {
@@ -104,14 +116,16 @@ export class BLEDevice implements IBLEDevice {
   };
 
   connect = async () => {
-    if (this.connected) {
+    if (this.connected || this.connecting) {
       return;
     }
 
+    this.connecting = true;
     const { addressType } = this.advertisement;
     
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.connecting = false;
         this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
         reject(new Error(`Connection timeout for device ${this.mac}`));
       }, 10000);
@@ -120,6 +134,7 @@ export class BLEDevice implements IBLEDevice {
         if (address !== this.address) return;
         
         clearTimeout(timeout);
+        this.connecting = false;
         this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
         
         if (connected) {
@@ -143,6 +158,7 @@ export class BLEDevice implements IBLEDevice {
       this.connection.on('message.BluetoothDeviceConnectionResponse', connectionHandler);
       this.connection.connectBluetoothDeviceService(this.address, addressType).catch((err) => {
         clearTimeout(timeout);
+        this.connecting = false;
         this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
         reject(err);
       });
@@ -150,15 +166,24 @@ export class BLEDevice implements IBLEDevice {
   };
 
   disconnect = async () => {
-    this.connected = false;
-    this.stopKeepalive();
-    await this.connection.disconnectBluetoothDeviceService(this.address);
+    this.intentionalDisconnect = true;
+    try {
+      this.connected = false;
+      this.stopKeepalive();
+      await this.connection.disconnectBluetoothDeviceService(this.address);
+    } finally {
+      // Reset flag after disconnect completes, even if it throws
+      this.intentionalDisconnect = false;
+    }
   };
 
   cleanup = () => {
     this.stopKeepalive();
     this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
+    if (this.autoReconnectHandler) {
+      this.connection.off('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
+    }
     
     // Clean up all notify listeners
     for (const listener of this.notifyListeners.values()) {
