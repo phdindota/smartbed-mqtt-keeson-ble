@@ -876,9 +876,9 @@ export class EspHomeClientWrapper extends EventEmitter {
     lowBuf.writeBigUInt64LE(lowBig);
     highBuf.writeBigUInt64LE(highBig);
 
-    // Combine the buffers and convert to hex string
+    // Combine the buffers and convert to hex string using native toString('hex')
     const combined = Buffer.concat([lowBuf, highBuf]);
-    const hex = Array.from(combined).map(b => b.toString(16).padStart(2, '0')).join('');
+    const hex = combined.toString('hex');
     
     // Format as UUID string
     return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
@@ -886,17 +886,17 @@ export class EspHomeClientWrapper extends EventEmitter {
 
   private parseUuid128(buffer: Buffer): string {
     // Legacy method for parsing 128-bit UUID from a 16-byte buffer
-    // This is kept for backward compatibility with raw advertising data parsing
+    // This is used for parsing UUIDs from raw BLE advertising data
+    // where the UUID bytes are in little-endian (reversed) order
     if (buffer.length < 16) {
       return '00000000-0000-0000-0000-000000000000';
     }
 
-    // Read as little-endian uint64 values
-    const low = buffer.readBigUInt64LE(0);
-    const high = buffer.readBigUInt64LE(8);
-
+    // Reverse the buffer to convert from little-endian to big-endian
+    const reversed = Buffer.from(buffer).reverse();
+    const hex = reversed.toString('hex');
+    
     // Format as UUID string
-    const hex = high.toString(16).padStart(16, '0') + low.toString(16).padStart(16, '0');
     return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
   }
 
