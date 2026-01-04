@@ -11,8 +11,9 @@ export class BLEDevice implements IBLEDevice {
   private paired = false;
   private connecting = false;
   private connectionAttempts = 0;
-  private readonly MAX_CONNECTION_ATTEMPTS = 3;
+  private readonly MAX_CONNECTION_ATTEMPTS = 5;
   private readonly INITIAL_RETRY_DELAY_MS = 1000;
+  private readonly RECONNECTION_WAIT_DELAY_MS = 1000;
   private connectionTimeout?: NodeJS.Timeout;
   private retryTimeout?: NodeJS.Timeout;
   private connectionPromise?: Promise<void>;
@@ -21,6 +22,8 @@ export class BLEDevice implements IBLEDevice {
   private connectionResponseListener?: (response: any) => void;
   private espHomeDisconnectedListener?: () => void;
   private espHomeReconnectedListener?: () => void;
+  private advertisementListener?: (advertisement: any) => void;
+  private discovered = true; // Start as true for backward compatibility
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -66,6 +69,17 @@ export class BLEDevice implements IBLEDevice {
     }
   }
 
+  private scheduleDelayedRetry(reason: string, delayMs: number): void {
+    // Clear any existing retry timeout before setting a new one
+    if (this.retryTimeout) {
+      clearTimeout(this.retryTimeout);
+    }
+    
+    this.retryTimeout = setTimeout(async () => {
+      this.scheduleRetry(reason);
+    }, delayMs);
+  }
+
   private scheduleRetry(reason: string): void {
     if (this.connectionAttempts >= this.MAX_CONNECTION_ATTEMPTS) {
       logWarn(`[BLEDevice] Maximum connection attempts (${this.MAX_CONNECTION_ATTEMPTS}) reached for device ${this.mac}. Not retrying.`);
@@ -89,12 +103,17 @@ export class BLEDevice implements IBLEDevice {
     }
     
     this.retryTimeout = setTimeout(async () => {
-      // Wait for ESPHome to be connected before retrying
+      // Don't retry if ESPHome is not connected - use fixed delay
       if (!this.connection.isConnected) {
-        logWarn(`[BLEDevice] ESPHome not connected, cannot retry connection for ${this.mac}`);
-        // Increment attempt count and reschedule or fail
-        this.connectionAttempts++;
-        this.scheduleRetry(reason);
+        logInfo(`[BLEDevice] ESPHome not connected, waiting before retry for ${this.mac}`);
+        this.scheduleDelayedRetry(reason, this.RECONNECTION_WAIT_DELAY_MS);
+        return;
+      }
+      
+      // Don't retry if device hasn't been re-discovered - use fixed delay
+      if (!this.discovered) {
+        logInfo(`[BLEDevice] Device ${this.mac} not yet discovered, waiting...`);
+        this.scheduleDelayedRetry('waiting for discovery', this.RECONNECTION_WAIT_DELAY_MS);
         return;
       }
       
@@ -104,6 +123,14 @@ export class BLEDevice implements IBLEDevice {
   }
 
   private performConnect = async () => {
+    // Check if device has been discovered before attempting connection
+    if (!this.discovered) {
+      logInfo(`[BLEDevice] Waiting for device ${this.mac} to be re-discovered...`);
+      // Don't count this as an attempt, schedule a delayed retry to check again
+      this.scheduleDelayedRetry('waiting for discovery', this.RECONNECTION_WAIT_DELAY_MS);
+      return;
+    }
+    
     try {
       const { addressType } = this.advertisement;
       this.connecting = true;
@@ -219,18 +246,40 @@ export class BLEDevice implements IBLEDevice {
     
     // Listen for ESPHome reconnection
     this.espHomeReconnectedListener = () => {
-      logInfo(`[BLEDevice] ESPHome reconnected - device ${this.mac} needs to be reconnected`);
+      logInfo(`[BLEDevice] ESPHome reconnected - device ${this.mac} waiting to be re-discovered`);
       // Reset connection attempts so device gets fresh retries
       this.connectionAttempts = 0;
       this.connecting = false;
+      // Mark as needing re-discovery
+      this.discovered = false;
       // Don't auto-reconnect here - let the controller handle it
     };
     this.connection.on('reconnected', this.espHomeReconnectedListener);
+    
+    // Listen for BLE advertisements to mark device as discovered
+    this.advertisementListener = (advertisement: BLEAdvertisement) => {
+      try {
+        // Check if this advertisement is for our device
+        if (advertisement && advertisement.address === this.address) {
+          this.markDiscovered();
+        }
+      } catch (error) {
+        logWarn(`[BLEDevice] Error processing advertisement for ${this.mac}:`, error);
+      }
+    };
+    this.connection.on('message.BluetoothLEAdvertisementResponse', this.advertisementListener);
   }
 
   pair = async () => {
     const { paired } = await this.connection.pairBluetoothDeviceService(this.address);
     this.paired = paired;
+  };
+
+  markDiscovered = () => {
+    if (!this.discovered) {
+      logInfo(`[BLEDevice] Device ${this.mac} re-discovered after ESPHome reconnect`);
+    }
+    this.discovered = true;
   };
 
   connect = async () => {
@@ -298,6 +347,12 @@ export class BLEDevice implements IBLEDevice {
     if (this.espHomeReconnectedListener) {
       this.connection.off('reconnected', this.espHomeReconnectedListener);
       this.espHomeReconnectedListener = undefined;
+    }
+    
+    // Remove advertisement listener
+    if (this.advertisementListener) {
+      this.connection.off('message.BluetoothLEAdvertisementResponse', this.advertisementListener);
+      this.advertisementListener = undefined;
     }
     
     // Clear any pending timeouts

@@ -10,11 +10,11 @@ describe(ESPConnection.name, () => {
   describe('getBLEDevices', () => {
     it('should skip devices with empty metadata and wait for complete advertisement', async () => {
       const mockConnection = mock<EspHomeClientWrapper>();
-      let advertisementListener: ((ad: BLEAdvertisement) => void) | undefined;
+      const advertisementListeners: Array<(ad: BLEAdvertisement) => void> = [];
 
       mockConnection.on.mockImplementation((event: string | symbol, listener: any) => {
         if (event === 'message.BluetoothLEAdvertisementResponse') {
-          advertisementListener = listener;
+          advertisementListeners.push(listener);
         }
         return mockConnection;
       });
@@ -30,7 +30,7 @@ describe(ESPConnection.name, () => {
       // Wait a bit for the listener to be set up
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(advertisementListener).toBeDefined();
+      expect(advertisementListeners.length).toBeGreaterThan(0);
 
       // Simulate first advertisement with empty metadata (this should be skipped)
       const emptyAdvertisement: BLEAdvertisement = {
@@ -43,7 +43,7 @@ describe(ESPConnection.name, () => {
         addressType: 0,
       };
 
-      advertisementListener!(emptyAdvertisement);
+      advertisementListeners.forEach(listener => listener(emptyAdvertisement));
 
       // Wait a bit to ensure the empty advertisement was processed
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -59,22 +59,25 @@ describe(ESPConnection.name, () => {
         addressType: 0,
       };
 
-      advertisementListener!(completeAdvertisement);
+      advertisementListeners.forEach(listener => listener(completeAdvertisement));
 
       const devices = await searchPromise;
 
       expect(devices).toHaveLength(1);
       expect(devices[0].name).toBe('KSBT03C101071926');
       expect(devices[0].advertisement.serviceUuidsList).toContain('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+      
+      // Clean up devices to prevent memory leaks and hanging timers
+      devices.forEach(device => device.cleanup());
     });
 
     it('should accept devices with manufacturer data even if service UUIDs are empty', async () => {
       const mockConnection = mock<EspHomeClientWrapper>();
-      let advertisementListener: ((ad: BLEAdvertisement) => void) | undefined;
+      const advertisementListeners: Array<(ad: BLEAdvertisement) => void> = [];
 
       mockConnection.on.mockImplementation((event: string | symbol, listener: any) => {
         if (event === 'message.BluetoothLEAdvertisementResponse') {
-          advertisementListener = listener;
+          advertisementListeners.push(listener);
         }
         return mockConnection;
       });
@@ -88,7 +91,7 @@ describe(ESPConnection.name, () => {
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(advertisementListener).toBeDefined();
+      expect(advertisementListeners.length).toBeGreaterThan(0);
 
       // Advertisement with manufacturer data but no service UUIDs
       const advertisement: BLEAdvertisement = {
@@ -107,22 +110,25 @@ describe(ESPConnection.name, () => {
         addressType: 0,
       };
 
-      advertisementListener!(advertisement);
+      advertisementListeners.forEach(listener => listener(advertisement));
 
       const devices = await searchPromise;
 
       expect(devices).toHaveLength(1);
       expect(devices[0].name).toBe('base-i5.test');
       expect(devices[0].advertisement.manufacturerDataList).toHaveLength(1);
+      
+      // Clean up devices to prevent memory leaks and hanging timers
+      devices.forEach(device => device.cleanup());
     });
 
     it('should accept devices with service UUIDs even if manufacturer data is empty', async () => {
       const mockConnection = mock<EspHomeClientWrapper>();
-      let advertisementListener: ((ad: BLEAdvertisement) => void) | undefined;
+      const advertisementListeners: Array<(ad: BLEAdvertisement) => void> = [];
 
       mockConnection.on.mockImplementation((event: string | symbol, listener: any) => {
         if (event === 'message.BluetoothLEAdvertisementResponse') {
-          advertisementListener = listener;
+          advertisementListeners.push(listener);
         }
         return mockConnection;
       });
@@ -136,7 +142,7 @@ describe(ESPConnection.name, () => {
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(advertisementListener).toBeDefined();
+      expect(advertisementListeners.length).toBeGreaterThan(0);
 
       // Advertisement with service UUIDs but no manufacturer data
       const advertisement: BLEAdvertisement = {
@@ -149,13 +155,16 @@ describe(ESPConnection.name, () => {
         addressType: 0,
       };
 
-      advertisementListener!(advertisement);
+      advertisementListeners.forEach(listener => listener(advertisement));
 
       const devices = await searchPromise;
 
       expect(devices).toHaveLength(1);
       expect(devices[0].name).toBe('KSBT03C101071926');
       expect(devices[0].advertisement.serviceUuidsList).toContain('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+      
+      // Clean up devices to prevent memory leaks and hanging timers
+      devices.forEach(device => device.cleanup());
     });
   });
 });
