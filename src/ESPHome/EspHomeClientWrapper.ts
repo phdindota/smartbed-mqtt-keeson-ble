@@ -367,6 +367,21 @@ export class EspHomeClientWrapper extends EventEmitter {
     logInfo('[ESPHomeClientWrapper] Subscribed to Bluetooth LE advertisements (V2 protocol)');
   }
 
+  unsubscribeBluetoothAdvertisementService(): void {
+    if (!this.connected) {
+      logWarn('[ESPHomeClientWrapper] Cannot unsubscribe from BLE advertisements - not connected');
+      return;
+    }
+
+    // Send SubscribeBluetoothLEAdvertisementsRequest with flags = 0 to unsubscribe
+    const payload = this.encodeProtoFields([
+      { fieldNumber: 1, wireType: WireType.VARINT, value: 0 }, // flags = 0 (unsubscribe)
+    ]);
+
+    this.sendMessage(BluetoothMessageType.SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST, payload);
+    logInfo('[ESPHomeClientWrapper] Unsubscribed from Bluetooth LE advertisements');
+  }
+
   async connectBluetoothDeviceService(address: number, addressType: number): Promise<void> {
     if (!this.connected) {
       throw new Error('Not connected to ESPHome device');
@@ -742,6 +757,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       logWarn(
         `[ESPHomeClientWrapper] GATT error for device ${address.toString(16)}: error code ${error}`
       );
+
+      // GATT error 13 indicates the device is disconnected
+      if (error === 13) {
+        logWarn(`[ESPHomeClientWrapper] Device ${address.toString(16)} disconnected (GATT error 13)`);
+        this.emit('deviceDisconnected', address);
+      }
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT error response:', error);
     }

@@ -57,9 +57,11 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
       // Don't re-throw - just log and cancel commands
       return;
     }
-    if (this.stayConnected) return;
-
-    this.disconnectTimeout = setTimeout(this.disconnect, 60_000);
+    
+    // Only set disconnect timeout if not in stayConnected mode
+    if (!this.stayConnected) {
+      this.disconnectTimeout = setTimeout(this.disconnect, 60_000);
+    }
   };
 
   writeCommand = (command: TCommand, count: number = 1, waitTime?: number) =>

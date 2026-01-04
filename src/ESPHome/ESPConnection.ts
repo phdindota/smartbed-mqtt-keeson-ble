@@ -104,7 +104,7 @@ export class ESPConnection implements IESPConnection {
     }
   }
 
-  async getBLEDevices(deviceNames: string[], nameMapper?: (name: string) => string, enableFiltering = true): Promise<IBLEDevice[]> {
+  async getBLEDevices(deviceNames: string[], nameMapper?: (name: string) => string, enableFiltering = true, stayConnected = false): Promise<IBLEDevice[]> {
     logInfo(`[ESPHome] Searching for device(s): ${deviceNames.join(', ')}`);
     deviceNames = deviceNames.map((name) => name.toLowerCase());
     const bleDevices: IBLEDevice[] = [];
@@ -141,7 +141,8 @@ export class ESPConnection implements IESPConnection {
         complete.resolve();
       },
       complete,
-      nameMapper
+      nameMapper,
+      stayConnected
     );
     
     // After discovery, enable MAC address filtering on all connections
@@ -152,6 +153,9 @@ export class ESPConnection implements IESPConnection {
       }
     }
     
+    // Stop BLE scanning after device discovery to reduce ESP32 load
+    this.stopBluetoothScanning();
+    
     if (deviceNames.length) logWarn(`[ESPHome] Could not find address for device(s): ${deviceNames.join(', ')}`);
     return bleDevices;
   }
@@ -159,7 +163,8 @@ export class ESPConnection implements IESPConnection {
   async discoverBLEDevices(
     onNewDeviceFound: (bleDevice: IBLEDevice) => void,
     complete: Promise<void>,
-    nameMapper?: (name: string) => string
+    nameMapper?: (name: string) => string,
+    stayConnected = false
   ) {
     const listenerBuilder = (connection: EspHomeClientWrapper) => ({
       connection,
@@ -169,7 +174,7 @@ export class ESPConnection implements IESPConnection {
         if (!name) return;
 
         if (nameMapper) name = nameMapper(name);
-        onNewDeviceFound(new BLEDevice(name, advertisement, connection));
+        onNewDeviceFound(new BLEDevice(name, advertisement, connection, stayConnected));
       },
     });
     const listeners = this.connections.map(listenerBuilder);
@@ -180,6 +185,13 @@ export class ESPConnection implements IESPConnection {
     await complete;
     for (const { connection, listener } of listeners) {
       connection.off('message.BluetoothLEAdvertisementResponse', listener);
+    }
+  }
+
+  stopBluetoothScanning(): void {
+    logInfo('[ESPHome] Stopping Bluetooth scanning to reduce ESP32 load');
+    for (const connection of this.connections) {
+      connection.unsubscribeBluetoothAdvertisementService();
     }
   }
 }

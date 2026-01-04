@@ -32,7 +32,8 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
   const options = getRootOptions();
   const filterUnknownDevices = options?.filterUnknownDevices !== false; // Default to true
   
-  const bleDevices = await esphome.getBLEDevices(deviceNames, undefined, filterUnknownDevices);
+  // Enable persistent connections for Keeson beds to prevent 60-second disconnects
+  const bleDevices = await esphome.getBLEDevices(deviceNames, undefined, filterUnknownDevices, true);
   for (const bleDevice of bleDevices) {
     const { name, mac, address, connect, disconnect, getDeviceInfo } = bleDevice;
     const device = devicesMap[mac] || devicesMap[name.toLowerCase()];

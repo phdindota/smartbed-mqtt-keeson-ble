@@ -13,6 +13,10 @@ export class BLEDevice implements IBLEDevice {
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
 
   private deviceInfo?: BLEDeviceInfo;
+  private keepaliveInterval?: NodeJS.Timeout;
+  private readonly KEEPALIVE_INTERVAL_MS = 30000; // 30 seconds
+  private readonly GENERIC_ACCESS_SERVICE_UUID = '00001800-0000-1000-8000-00805f9b34fb';
+  private readonly DEVICE_NAME_CHARACTERISTIC_UUID = '00002a00-0000-1000-8000-00805f9b34fb';
 
   public mac: string;
   public get address() {
@@ -25,13 +29,65 @@ export class BLEDevice implements IBLEDevice {
     return this.advertisement.serviceUuidsList;
   }
 
-  constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper) {
+  constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper, private stayConnected = false) {
     this.mac = this.address.toString(16).padStart(12, '0');
+    
+    // Listen for GATT error events to detect disconnections
+    this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
+    this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
   }
 
   pair = async () => {
     const { paired } = await this.connection.pairBluetoothDeviceService(this.address);
     this.paired = paired;
+  };
+
+  private handleGATTError = ({ address, error }: { address: number; error: number }) => {
+    if (address !== this.address) return;
+    
+    // GATT error 13 means device is disconnected
+    if (error === 13) {
+      this.connected = false;
+      this.stopKeepalive();
+    }
+  };
+
+  private handleDeviceDisconnected = (address: number) => {
+    if (address !== this.address) return;
+    this.connected = false;
+    this.stopKeepalive();
+  };
+
+  private startKeepalive = () => {
+    if (!this.stayConnected) return;
+    
+    this.stopKeepalive();
+    
+    this.keepaliveInterval = setInterval(async () => {
+      try {
+        // Read device name from Generic Access service as keepalive ping
+        const characteristic = await this.getCharacteristic(
+          this.GENERIC_ACCESS_SERVICE_UUID,
+          this.DEVICE_NAME_CHARACTERISTIC_UUID,
+          false // Don't log warnings if not found
+        );
+        
+        if (characteristic) {
+          await this.readCharacteristic(characteristic.handle);
+        }
+      } catch (error) {
+        // Keepalive read failed - device is likely disconnected
+        this.connected = false;
+        this.stopKeepalive();
+      }
+    }, this.KEEPALIVE_INTERVAL_MS);
+  };
+
+  private stopKeepalive = () => {
+    if (this.keepaliveInterval) {
+      clearInterval(this.keepaliveInterval);
+      this.keepaliveInterval = undefined;
+    }
   };
 
   connect = async () => {
@@ -55,6 +111,12 @@ export class BLEDevice implements IBLEDevice {
         
         if (connected) {
           this.connected = true;
+          
+          // Start keepalive for persistent connections
+          if (this.stayConnected) {
+            this.startKeepalive();
+          }
+          
           if (this.paired) {
             this.pair().then(resolve).catch(reject);
           } else {
@@ -76,11 +138,14 @@ export class BLEDevice implements IBLEDevice {
 
   disconnect = async () => {
     this.connected = false;
+    this.stopKeepalive();
     await this.connection.disconnectBluetoothDeviceService(this.address);
   };
 
   cleanup = () => {
-    // Nothing to clean up now since we don't have persistent listeners
+    this.stopKeepalive();
+    this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
+    this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
   };
 
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
@@ -92,7 +157,22 @@ export class BLEDevice implements IBLEDevice {
         throw new Error(`Cannot write: failed to reconnect to device ${this.mac}`);
       }
     }
-    await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
+    
+    try {
+      await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
+    } catch (error) {
+      // If write fails and we're not connected, try to reconnect and retry once
+      if (!this.connected) {
+        try {
+          await this.connect();
+          await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
+        } catch (retryError) {
+          throw new Error(`Write failed after reconnection attempt: ${retryError}`);
+        }
+      } else {
+        throw error;
+      }
+    }
   };
 
   getServices = async () => {
