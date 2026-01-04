@@ -92,6 +92,8 @@ export class EspHomeClientWrapper extends EventEmitter {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private readonly RECONNECT_DELAY_MS = 2000;
+  private readonly ESP32_STABILIZATION_DELAY_MS = 1000;
+  private readonly BLE_SCAN_RESULTS_DELAY_MS = 2000;
   private lastDisconnectTime: Map<number, number> = new Map();
   private readonly DISCONNECT_DEBOUNCE_MS = 1000;
 
@@ -236,7 +238,7 @@ export class EspHomeClientWrapper extends EventEmitter {
         
         // Wait for ESP32 to stabilize
         logInfo('[ESPHomeClientWrapper] Waiting for ESP32 to stabilize...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, this.ESP32_STABILIZATION_DELAY_MS));
         
         // Re-subscribe to BLE advertisements after reconnecting
         logInfo('[ESPHomeClientWrapper] Re-subscribing to BLE advertisements...');
@@ -244,7 +246,7 @@ export class EspHomeClientWrapper extends EventEmitter {
         
         // Wait for BLE scan results
         logInfo('[ESPHomeClientWrapper] Waiting for BLE scan results...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, this.BLE_SCAN_RESULTS_DELAY_MS));
         
         logInfo('[ESPHomeClientWrapper] Reconnected successfully');
         this.reconnecting = false;

@@ -91,17 +91,29 @@ export class BLEDevice implements IBLEDevice {
     }
     
     this.retryTimeout = setTimeout(async () => {
-      // Don't retry if ESPHome is not connected
+      // Don't retry if ESPHome is not connected - use fixed 1 second delay
       if (!this.connection.isConnected) {
         logInfo(`[BLEDevice] ESPHome not connected, waiting before retry for ${this.mac}`);
-        this.scheduleRetry(reason);  // Try again later, don't count as attempt
+        // Clear existing timeout and set a new one with fixed delay
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
+        }
+        this.retryTimeout = setTimeout(async () => {
+          this.scheduleRetry(reason);  // Try again later with same reason
+        }, 1000);
         return;
       }
       
-      // Don't retry if device hasn't been re-discovered
+      // Don't retry if device hasn't been re-discovered - use fixed 1 second delay
       if (!this.discovered) {
         logInfo(`[BLEDevice] Device ${this.mac} not yet discovered, waiting...`);
-        this.scheduleRetry('waiting for discovery');  // Check again in 1 second
+        // Clear existing timeout and set a new one with fixed delay
+        if (this.retryTimeout) {
+          clearTimeout(this.retryTimeout);
+        }
+        this.retryTimeout = setTimeout(async () => {
+          this.scheduleRetry('waiting for discovery');  // Check again
+        }, 1000);
         return;
       }
       
