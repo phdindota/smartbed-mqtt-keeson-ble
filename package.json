@@ -1,6 +1,6 @@
 {
   "name": "keeson-bed-mqtt",
-  "version": "1.1.22",
+  "version": "2.0.0",
   "description": "Keeson Bed MQTT integration for Home Assistant",
   "author": "phdindota",
   "repository": "git@github.com:phdindota/smartbed-mqtt-keeson-ble.git",
