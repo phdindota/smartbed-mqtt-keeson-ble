@@ -26,8 +26,6 @@ export class BLEDevice implements IBLEDevice {
   private readonly GENERIC_ACCESS_SERVICE_UUID = '00001800-0000-1000-8000-00805f9b34fb';
   private readonly DEVICE_NAME_CHARACTERISTIC_UUID = '00002a00-0000-1000-8000-00805f9b34fb';
   private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
-  private autoReconnectHandler?: (response: { address: number; connected: boolean }) => void;
-  private intentionalDisconnect = false;
 
   public mac: string;
   public get address() {
@@ -42,14 +40,6 @@ export class BLEDevice implements IBLEDevice {
 
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: EspHomeClientWrapper, private stayConnected = false) {
     this.mac = this.address.toString(16).padStart(12, '0');
-    
-    // Auto-reconnect when device disconnects (matching richardhopton/smartbed-mqtt behavior)
-    // Only reconnect if it's not an intentional disconnect
-    this.autoReconnectHandler = ({ address, connected }) => {
-      if (this.address !== address || this.connected === connected) return;
-      if (this.intentionalDisconnect) return;
-      void this.connect();
-    };
     
     // Register event listeners
     this.registerEventListeners();
@@ -169,23 +159,14 @@ export class BLEDevice implements IBLEDevice {
   };
 
   disconnect = async () => {
-    this.intentionalDisconnect = true;
-    try {
-      this.connected = false;
-      this.stopKeepalive();
-      await this.connection.disconnectBluetoothDeviceService(this.address);
-    } finally {
-      // Reset flag after disconnect completes, even if it throws
-      this.intentionalDisconnect = false;
-    }
+    this.connected = false;
+    this.stopKeepalive();
+    await this.connection.disconnectBluetoothDeviceService(this.address);
   };
 
   private removeEventListeners = () => {
     this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
-    if (this.autoReconnectHandler) {
-      this.connection.off('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
-    }
     
     // Clean up all notify listeners
     for (const listener of this.notifyListeners.values()) {
@@ -196,10 +177,6 @@ export class BLEDevice implements IBLEDevice {
   private registerEventListeners = () => {
     this.connection.on('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.on('deviceDisconnected', this.handleDeviceDisconnected);
-    
-    if (this.autoReconnectHandler) {
-      this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
-    }
     
     // Re-register all notify listeners on the new connection
     // Note: The listeners in the map are handler functions, not connection-specific
