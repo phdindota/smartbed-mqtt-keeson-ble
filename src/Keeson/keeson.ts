@@ -28,9 +28,9 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
 
   if (deviceNames.length !== devices.length) return logError('[Keeson] Duplicate name detected in configuration');
 
-  // Read filterUnknownDevices option (defaults to true)
+  // Read filterUnknownDevices option (defaults to true if not specified)
   const options = getRootOptions();
-  const filterUnknownDevices = options.filterUnknownDevices !== false; // Default to true if not specified
+  const filterUnknownDevices = options?.filterUnknownDevices !== false; // Default to true
   
   const bleDevices = await esphome.getBLEDevices(deviceNames, undefined, filterUnknownDevices);
   for (const bleDevice of bleDevices) {

@@ -100,14 +100,6 @@ export class ESPConnection implements IESPConnection {
     const seenAddresses: number[] = [];
     const complete = new Deferred<void>();
     
-    // Configure MAC address filtering if enabled
-    // This step happens before we start discovering to filter out unwanted advertisements early
-    if (enableFiltering) {
-      // We'll collect addresses as we discover them, then enable filtering
-      // For now, we pass an empty array to disable filtering during discovery
-      // After discovery, we can enable it if needed for ongoing operations
-    }
-    
     await this.discoverBLEDevices(
       (bleDevice) => {
         const { name, mac, advertisement, address } = bleDevice;
