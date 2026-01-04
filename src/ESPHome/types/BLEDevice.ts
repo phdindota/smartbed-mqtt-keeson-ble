@@ -43,6 +43,29 @@ export class BLEDevice implements IBLEDevice {
     return this.INITIAL_RETRY_DELAY_MS * Math.pow(2, this.connectionAttempts - 1);
   }
 
+  private clearConnectionState(): void {
+    // Clear connection state
+    this.connecting = false;
+    this.connected = false;
+    this.connectionAttempts = 0;
+    this.connectionPromise = undefined;
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = undefined;
+    }
+    if (this.retryTimeout) {
+      clearTimeout(this.retryTimeout);
+      this.retryTimeout = undefined;
+    }
+    
+    // Clear any pending connection promise
+    if (this.connectionPromiseReject) {
+      this.connectionPromiseReject(new Error('Disconnected'));
+      this.connectionPromiseResolve = undefined;
+      this.connectionPromiseReject = undefined;
+    }
+  }
+
   private scheduleRetry(reason: string): void {
     if (this.connectionAttempts >= this.MAX_CONNECTION_ATTEMPTS) {
       logWarn(`[BLEDevice] Maximum connection attempts (${this.MAX_CONNECTION_ATTEMPTS}) reached for device ${this.mac}. Not retrying.`);
@@ -65,7 +88,16 @@ export class BLEDevice implements IBLEDevice {
       clearTimeout(this.retryTimeout);
     }
     
-    this.retryTimeout = setTimeout(() => {
+    this.retryTimeout = setTimeout(async () => {
+      // Wait for ESPHome to be connected before retrying
+      if (!this.connection.isConnected) {
+        logWarn(`[BLEDevice] ESPHome not connected, cannot retry connection for ${this.mac}`);
+        // Increment attempt count and reschedule or fail
+        this.connectionAttempts++;
+        this.scheduleRetry(reason);
+        return;
+      }
+      
       // Retry connection by calling performConnect directly
       void this.performConnect();
     }, delay);
@@ -188,6 +220,9 @@ export class BLEDevice implements IBLEDevice {
     // Listen for ESPHome reconnection
     this.espHomeReconnectedListener = () => {
       logInfo(`[BLEDevice] ESPHome reconnected - device ${this.mac} needs to be reconnected`);
+      // Reset connection attempts so device gets fresh retries
+      this.connectionAttempts = 0;
+      this.connecting = false;
       // Don't auto-reconnect here - let the controller handle it
     };
     this.connection.on('reconnected', this.espHomeReconnectedListener);
@@ -230,26 +265,20 @@ export class BLEDevice implements IBLEDevice {
   };
 
   disconnect = async () => {
-    // Clear connection state
-    this.connecting = false;
-    this.connected = false;
-    this.connectionAttempts = 0;
-    this.connectionPromise = undefined;
-    if (this.connectionTimeout) {
-      clearTimeout(this.connectionTimeout);
-      this.connectionTimeout = undefined;
-    }
-    if (this.retryTimeout) {
-      clearTimeout(this.retryTimeout);
-      this.retryTimeout = undefined;
+    // Don't send disconnect if already disconnected or ESPHome is not connected
+    if (!this.connected) {
+      logInfo(`[BLEDevice] Device ${this.mac} already disconnected, skipping disconnect request`);
+      this.clearConnectionState();
+      return;
     }
     
-    // Clear any pending connection promise
-    if (this.connectionPromiseReject) {
-      this.connectionPromiseReject(new Error('Disconnected'));
-      this.connectionPromiseResolve = undefined;
-      this.connectionPromiseReject = undefined;
+    if (!this.connection.isConnected) {
+      logInfo(`[BLEDevice] ESPHome not connected, marking device ${this.mac} as disconnected locally`);
+      this.clearConnectionState();
+      return;
     }
+    
+    this.clearConnectionState();
     
     await this.connection.disconnectBluetoothDeviceService(this.address);
   };
