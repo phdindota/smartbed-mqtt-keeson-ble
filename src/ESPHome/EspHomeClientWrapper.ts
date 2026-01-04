@@ -865,10 +865,17 @@ export class EspHomeClientWrapper extends EventEmitter {
   private parseUuid128FromRepeatedUint64(buffers: Buffer[]): string | null {
     // Parse 128-bit UUID from repeated uint64 field (ESPHome protobuf format)
     // The UUID is sent as two uint64 varints (low and high parts)
-    if (!buffers || buffers.length < 2) {
-      if (buffers && buffers.length === 1) {
-        logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got 1');
-      }
+    if (!buffers || buffers.length === 0) {
+      return null;
+    }
+    
+    if (buffers.length === 1) {
+      logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got 1');
+      return null;
+    }
+    
+    if (buffers.length < 2) {
+      // This shouldn't happen, but handle gracefully
       return null;
     }
 
