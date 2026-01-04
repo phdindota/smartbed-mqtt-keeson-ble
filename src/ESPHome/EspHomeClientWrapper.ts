@@ -22,10 +22,13 @@ enum BluetoothMessageType {
 }
 
 enum BluetoothDeviceRequestType {
-  CONNECT = 0,
+  CONNECT = 0,  // Deprecated - V1, do not use
   DISCONNECT = 1,
   PAIR = 2,
   UNPAIR = 3,
+  CONNECT_V3_WITH_CACHE = 4,  // V3 connection using cached GATT services (faster, use for reconnections)
+  CONNECT_V3_WITHOUT_CACHE = 5,  // V3 connection with fresh GATT discovery (slower but safer, use for first connections)
+  CLEAR_CACHE = 6,
 }
 
 // Wire types for protobuf encoding
@@ -250,15 +253,16 @@ export class EspHomeClientWrapper extends EventEmitter {
     }
 
     // Send BluetoothDeviceRequest (message type 68)
+    // Use V3 connection type (without cache for fresh service discovery)
     const payload = this.encodeProtoFields([
       { fieldNumber: 1, wireType: WireType.VARINT, value: address },
-      { fieldNumber: 2, wireType: WireType.VARINT, value: BluetoothDeviceRequestType.CONNECT },
+      { fieldNumber: 2, wireType: WireType.VARINT, value: BluetoothDeviceRequestType.CONNECT_V3_WITHOUT_CACHE },
       { fieldNumber: 3, wireType: WireType.VARINT, value: 1 }, // has_address_type
       { fieldNumber: 4, wireType: WireType.VARINT, value: addressType },
     ]);
 
     this.sendMessage(BluetoothMessageType.BLUETOOTH_DEVICE_REQUEST, payload);
-    logInfo(`[ESPHomeClientWrapper] Sent connect request for device ${address.toString(16)}`);
+    logInfo(`[ESPHomeClientWrapper] Sent V3 connect request for device ${address.toString(16)}`);
   }
 
   async disconnectBluetoothDeviceService(address: number): Promise<void> {
