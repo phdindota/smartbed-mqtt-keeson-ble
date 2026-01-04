@@ -10,6 +10,7 @@ import { IMQTTConnection } from '@mqtt/IMQTTConnection';
 let espHomeConnection: IESPConnection | null = null;
 let mqtt: IMQTTConnection | null = null;
 let keesonCleanup: (() => void) | null = null;
+let isInitializing = false;
 
 const processExit = (exitCode?: number) => {
   if (exitCode && exitCode > 0) {
@@ -70,20 +71,32 @@ const initializeKeeson = async () => {
     return;
   }
   
-  // Clean up old devices if they exist
-  if (keesonCleanup) {
-    logInfo('[Keeson] Cleaning up old devices before re-initialization...');
-    try {
-      keesonCleanup();
-    } catch (error) {
-      logError('[Keeson] Error during cleanup, continuing with re-initialization:', error);
-    }
-    keesonCleanup = null;
+  // Prevent concurrent initialization attempts
+  if (isInitializing) {
+    logWarn('[Keeson] Initialization already in progress, skipping...');
+    return;
   }
   
-  // Re-initialize Keeson devices and store new cleanup function
-  logInfo('[Keeson] Initializing devices...');
-  keesonCleanup = await keeson(mqtt, espHomeConnection);
+  isInitializing = true;
+  
+  try {
+    // Clean up old devices if they exist
+    if (keesonCleanup) {
+      logInfo('[Keeson] Cleaning up old devices before re-initialization...');
+      try {
+        keesonCleanup();
+      } catch (error) {
+        logError('[Keeson] Error during cleanup, continuing with re-initialization:', error);
+      }
+      keesonCleanup = null;
+    }
+    
+    // Re-initialize Keeson devices and store new cleanup function
+    logInfo('[Keeson] Initializing devices...');
+    keesonCleanup = await keeson(mqtt, espHomeConnection);
+  } finally {
+    isInitializing = false;
+  }
 };
 
 const start = async () => {
