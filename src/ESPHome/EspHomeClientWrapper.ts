@@ -503,7 +503,15 @@ export class EspHomeClientWrapper extends EventEmitter {
     response: boolean
   ): Promise<void> {
     if (!this.connected) {
-      throw new Error('Not connected to ESPHome device');
+      logWarn('[ESPHomeClientWrapper] Not connected, waiting for reconnection...');
+      // Wait up to 5 seconds for reconnection
+      for (let i = 0; i < 50; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (this.connected) break;
+      }
+      if (!this.connected) {
+        throw new Error('Not connected to ESPHome device after waiting');
+      }
     }
 
     // Send write request

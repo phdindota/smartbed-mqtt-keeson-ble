@@ -54,7 +54,8 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
       // Stop the timer to prevent spam
       await this.cancelCommands();
       
-      throw e; // Re-throw so caller knows it failed
+      // Don't re-throw - just log and cancel commands
+      return;
     }
     if (this.stayConnected) return;
 
