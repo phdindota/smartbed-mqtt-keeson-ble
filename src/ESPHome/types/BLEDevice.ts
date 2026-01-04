@@ -5,10 +5,16 @@ import { BLEAdvertisement } from './BLEAdvertisement';
 import { BLEDeviceInfo } from './BLEDeviceInfo';
 import { IBLEDevice } from './IBLEDevice';
 
+interface BluetoothGATTNotifyDataMessage {
+  address: number;
+  handle: number;
+  data: string;
+}
+
 export class BLEDevice implements IBLEDevice {
   private connected = false;
   private paired = false;
-  private notifyListeners: Map<number, (message: any) => void> = new Map();
+  private notifyListeners: Map<number, (message: BluetoothGATTNotifyDataMessage) => void> = new Map();
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -222,7 +228,7 @@ export class BLEDevice implements IBLEDevice {
     }
     
     // Create and store new listener
-    const listener = (message: any) => {
+    const listener = (message: BluetoothGATTNotifyDataMessage) => {
       if (message.address != this.address || message.handle != handle) return;
       notify(new Uint8Array([...Buffer.from(message.data, 'base64')]));
     };
