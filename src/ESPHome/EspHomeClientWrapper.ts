@@ -233,6 +233,19 @@ export class EspHomeClientWrapper extends EventEmitter {
       try {
         await new Promise(resolve => setTimeout(resolve, this.RECONNECT_DELAY_MS));
         await this.connect();
+        
+        // Wait for ESP32 to stabilize
+        logInfo('[ESPHomeClientWrapper] Waiting for ESP32 to stabilize...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Re-subscribe to BLE advertisements after reconnecting
+        logInfo('[ESPHomeClientWrapper] Re-subscribing to BLE advertisements...');
+        this.subscribeBluetoothAdvertisementService();
+        
+        // Wait for BLE scan results
+        logInfo('[ESPHomeClientWrapper] Waiting for BLE scan results...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
         logInfo('[ESPHomeClientWrapper] Reconnected successfully');
         this.reconnecting = false;
         this.emit('reconnected');
