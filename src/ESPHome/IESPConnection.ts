@@ -10,5 +10,4 @@ export interface IESPConnection {
     nameMapper?: (name: string) => string,
     stayConnected?: boolean
   ): Promise<void>;
-  stopBluetoothScanning(): void;
 }

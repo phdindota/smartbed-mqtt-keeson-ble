@@ -151,10 +151,8 @@ export class ESPConnection implements IESPConnection {
       for (const connection of this.connections) {
         connection.setAllowedDevices(seenAddresses);
       }
+      logInfo('[ESPHome] MAC address filtering enabled - keeping BLE scanning active for connectivity');
     }
-    
-    // Stop BLE scanning after device discovery to reduce ESP32 load
-    this.stopBluetoothScanning();
     
     if (deviceNames.length) logWarn(`[ESPHome] Could not find address for device(s): ${deviceNames.join(', ')}`);
     return bleDevices;
@@ -185,13 +183,6 @@ export class ESPConnection implements IESPConnection {
     await complete;
     for (const { connection, listener } of listeners) {
       connection.off('message.BluetoothLEAdvertisementResponse', listener);
-    }
-  }
-
-  stopBluetoothScanning(): void {
-    logInfo('[ESPHome] Stopping Bluetooth scanning to reduce ESP32 load');
-    for (const connection of this.connections) {
-      connection.unsubscribeBluetoothAdvertisementService();
     }
   }
 }

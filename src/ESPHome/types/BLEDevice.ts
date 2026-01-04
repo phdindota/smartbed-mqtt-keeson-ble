@@ -8,6 +8,7 @@ import { IBLEDevice } from './IBLEDevice';
 export class BLEDevice implements IBLEDevice {
   private connected = false;
   private paired = false;
+  private notifyListeners: Map<number, (message: any) => void> = new Map();
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -150,6 +151,12 @@ export class BLEDevice implements IBLEDevice {
     this.stopKeepalive();
     this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
+    
+    // Clean up all notify listeners
+    for (const listener of this.notifyListeners.values()) {
+      this.connection.off('message.BluetoothGATTNotifyDataResponse', listener);
+    }
+    this.notifyListeners.clear();
   };
 
   private async reconnectIfNeeded(): Promise<void> {
@@ -208,10 +215,20 @@ export class BLEDevice implements IBLEDevice {
   };
 
   subscribeToCharacteristic = async (handle: number, notify: (data: Uint8Array) => void) => {
-    this.connection.on('message.BluetoothGATTNotifyDataResponse', (message) => {
+    // Remove existing listener for this handle if any
+    const existingListener = this.notifyListeners.get(handle);
+    if (existingListener) {
+      this.connection.off('message.BluetoothGATTNotifyDataResponse', existingListener);
+    }
+    
+    // Create and store new listener
+    const listener = (message: any) => {
       if (message.address != this.address || message.handle != handle) return;
       notify(new Uint8Array([...Buffer.from(message.data, 'base64')]));
-    });
+    };
+    this.notifyListeners.set(handle, listener);
+    
+    this.connection.on('message.BluetoothGATTNotifyDataResponse', listener);
     await this.connection.notifyBluetoothGATTCharacteristicService(this.address, handle);
   };
 
