@@ -20,6 +20,7 @@ describe('BLEDevice', () => {
       connectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
       disconnectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
       pairBluetoothDeviceService: jest.fn().mockResolvedValue({ paired: true }),
+      isConnected: true, // Default to connected
     } as any;
 
     advertisement = {
@@ -197,6 +198,92 @@ describe('BLEDevice', () => {
         testData,
         false
       );
+    });
+  });
+
+  describe('updateConnection', () => {
+    it('should update connection reference and re-register event listeners', () => {
+      const newConnection: jest.Mocked<EspHomeClientWrapper> = {
+        on: jest.fn(),
+        off: jest.fn(),
+        connectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
+        disconnectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
+        pairBluetoothDeviceService: jest.fn().mockResolvedValue({ paired: true }),
+      } as any;
+
+      // Get handlers registered on old connection
+      const oldGattErrorHandler = mockConnection.on.mock.calls.find(
+        call => call[0] === 'message.BluetoothGATTErrorResponse'
+      )?.[1];
+      const oldDisconnectedHandler = mockConnection.on.mock.calls.find(
+        call => call[0] === 'deviceDisconnected'
+      )?.[1];
+      const oldAutoReconnectHandler = mockConnection.on.mock.calls.find(
+        call => call[0] === 'message.BluetoothDeviceConnectionResponse'
+      )?.[1];
+
+      // Update connection
+      bleDevice.updateConnection(newConnection);
+
+      // Verify old connection listeners were removed
+      expect(mockConnection.off).toHaveBeenCalledWith('message.BluetoothGATTErrorResponse', oldGattErrorHandler);
+      expect(mockConnection.off).toHaveBeenCalledWith('deviceDisconnected', oldDisconnectedHandler);
+      expect(mockConnection.off).toHaveBeenCalledWith('message.BluetoothDeviceConnectionResponse', oldAutoReconnectHandler);
+
+      // Verify new connection has listeners registered
+      expect(newConnection.on).toHaveBeenCalledWith('message.BluetoothGATTErrorResponse', expect.any(Function));
+      expect(newConnection.on).toHaveBeenCalledWith('deviceDisconnected', expect.any(Function));
+      expect(newConnection.on).toHaveBeenCalledWith('message.BluetoothDeviceConnectionResponse', expect.any(Function));
+    });
+
+    it('should reset connection state when updating connection', () => {
+      const newConnection: jest.Mocked<EspHomeClientWrapper> = {
+        on: jest.fn(),
+        off: jest.fn(),
+      } as any;
+
+      // Manually set connected state (simulating a connected device)
+      (bleDevice as any).connected = true;
+      (bleDevice as any).connecting = true;
+
+      // Update connection
+      bleDevice.updateConnection(newConnection);
+
+      // Verify connection state was reset
+      expect((bleDevice as any).connected).toBe(false);
+      expect((bleDevice as any).connecting).toBe(false);
+    });
+  });
+
+  describe('connect with connection validity check', () => {
+    it('should reject if underlying ESPHome connection is not active', async () => {
+      // Set connection as not connected
+      (mockConnection as any).isConnected = false;
+
+      await expect(bleDevice.connect()).rejects.toThrow('Cannot connect to device cfbf8511b3ea - ESPHome connection is not active');
+    });
+
+    it('should proceed if underlying ESPHome connection is active', async () => {
+      // Set connection as connected
+      (mockConnection as any).isConnected = true;
+
+      // Start the connect promise
+      const connectPromise = bleDevice.connect();
+
+      // Get all handlers for BluetoothDeviceConnectionResponse
+      const allHandlers = mockConnection.on.mock.calls
+        .filter(call => call[0] === 'message.BluetoothDeviceConnectionResponse')
+        .map(call => call[1]);
+
+      // Trigger successful connection response on all handlers
+      allHandlers.forEach(handler => {
+        handler({ address: advertisement.address, connected: true });
+      });
+
+      // Wait for the promise to resolve
+      await connectPromise;
+
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalled();
     });
   });
 });

@@ -28,8 +28,9 @@ process.on('SIGTERM', () => processExit(0));
 process.on('uncaughtException', async (err) => {
   const errorMessage = err?.message || String(err);
   
-  // Check if this is a recoverable error (unknown message type)
+  // Check if this is a recoverable error
   const isUnknownMessageType = errorMessage.includes('Failed find message type for Id:');
+  const isConnectionTimeout = errorMessage.includes('Connection timeout for device');
   
   if (isUnknownMessageType) {
     // Extract message type ID from error message
@@ -57,6 +58,13 @@ process.on('uncaughtException', async (err) => {
     } else {
       logWarn('[ESPHome] No connection available to reconnect');
     }
+  }
+  
+  // Handle connection timeout errors - don't crash, just log
+  if (isConnectionTimeout) {
+    logError('[BLE] Connection timeout (recoverable):', err);
+    logInfo('[BLE] Device will reconnect on next command or during keepalive');
+    return; // Don't exit, continue running
   }
   
   // For all other errors or if reconnection failed, exit
