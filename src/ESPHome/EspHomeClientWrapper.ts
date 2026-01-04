@@ -142,6 +142,7 @@ export class EspHomeClientWrapper extends EventEmitter {
   private readonly WRITE_WAIT_RECONNECT_TIMEOUT_MS = 5000;
   private readonly WRITE_WAIT_RECONNECT_POLL_INTERVAL_MS = 100;
   private allowedMacAddresses: Set<number> = new Set();
+  private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
 
   constructor(config: {
     host: string;
@@ -365,6 +366,21 @@ export class EspHomeClientWrapper extends EventEmitter {
 
     this.sendMessage(BluetoothMessageType.SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST, payload);
     logInfo('[ESPHomeClientWrapper] Subscribed to Bluetooth LE advertisements (V2 protocol)');
+  }
+
+  unsubscribeBluetoothAdvertisementService(): void {
+    if (!this.connected) {
+      logWarn('[ESPHomeClientWrapper] Cannot unsubscribe from BLE advertisements - not connected');
+      return;
+    }
+
+    // Send SubscribeBluetoothLEAdvertisementsRequest with flags = 0 to unsubscribe
+    const payload = this.encodeProtoFields([
+      { fieldNumber: 1, wireType: WireType.VARINT, value: 0 }, // flags = 0 (unsubscribe)
+    ]);
+
+    this.sendMessage(BluetoothMessageType.SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST, payload);
+    logInfo('[ESPHomeClientWrapper] Unsubscribed from Bluetooth LE advertisements');
   }
 
   async connectBluetoothDeviceService(address: number, addressType: number): Promise<void> {
@@ -742,6 +758,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       logWarn(
         `[ESPHomeClientWrapper] GATT error for device ${address.toString(16)}: error code ${error}`
       );
+
+      // GATT error 13 indicates the device is disconnected
+      if (error === this.GATT_ERROR_DEVICE_DISCONNECTED) {
+        logWarn(`[ESPHomeClientWrapper] Device ${address.toString(16)} disconnected (GATT error 13)`);
+        this.emit('deviceDisconnected', address);
+      }
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT error response:', error);
     }
