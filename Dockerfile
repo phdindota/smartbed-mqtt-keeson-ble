@@ -42,5 +42,5 @@ LABEL \
     io.hass.name="Keeson Bed Integration via MQTT" \
     io.hass.description="Home Assistant Add-on for Keeson Smart Beds (BLE)" \
     io.hass.type="addon" \
-    io.hass.version="1.1.22" \
+    io.hass.version="2.0.0" \
     maintainer="phdindota"
