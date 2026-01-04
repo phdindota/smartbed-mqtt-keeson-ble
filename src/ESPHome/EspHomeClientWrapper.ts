@@ -39,6 +39,9 @@ enum WireType {
   FIXED32 = 5,
 }
 
+// Constants
+const NULL_UUID = '00000000-0000-0000-0000-000000000000';
+
 // BLE data structure
 export interface BLEData {
   uuid: string;
@@ -776,12 +779,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       if (uuidField && uuidField.length >= 2) {
         // Use 128-bit UUID from repeated uint64 field
         const parsed = this.parseUuid128FromRepeatedUint64(uuidField);
-        uuid = parsed || '00000000-0000-0000-0000-000000000000';
+        uuid = parsed || NULL_UUID;
       } else if (shortUuid !== undefined) {
         // Fall back to short UUID (16-bit or 32-bit)
         uuid = this.formatShortUuid(shortUuid);
       } else {
-        uuid = '00000000-0000-0000-0000-000000000000';
+        uuid = NULL_UUID;
       }
 
       // Parse characteristics
@@ -800,11 +803,11 @@ export class EspHomeClientWrapper extends EventEmitter {
         let charUuid: string;
         if (charUuidField && charUuidField.length >= 2) {
           const parsed = this.parseUuid128FromRepeatedUint64(charUuidField);
-          charUuid = parsed || '00000000-0000-0000-0000-000000000000';
+          charUuid = parsed || NULL_UUID;
         } else if (charShortUuid !== undefined) {
           charUuid = this.formatShortUuid(charShortUuid);
         } else {
-          charUuid = '00000000-0000-0000-0000-000000000000';
+          charUuid = NULL_UUID;
         }
 
         // Parse descriptors (field 4)
@@ -822,11 +825,11 @@ export class EspHomeClientWrapper extends EventEmitter {
           let descUuid: string;
           if (descUuidField && descUuidField.length >= 2) {
             const parsed = this.parseUuid128FromRepeatedUint64(descUuidField);
-            descUuid = parsed || '00000000-0000-0000-0000-000000000000';
+            descUuid = parsed || NULL_UUID;
           } else if (descShortUuid !== undefined) {
             descUuid = this.formatShortUuid(descShortUuid);
           } else {
-            descUuid = '00000000-0000-0000-0000-000000000000';
+            descUuid = NULL_UUID;
           }
 
           descriptorsList.push({
@@ -863,6 +866,9 @@ export class EspHomeClientWrapper extends EventEmitter {
     // Parse 128-bit UUID from repeated uint64 field (ESPHome protobuf format)
     // The UUID is sent as two uint64 varints (low and high parts)
     if (!buffers || buffers.length < 2) {
+      if (buffers && buffers.length === 1) {
+        logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got 1');
+      }
       return null;
     }
 
@@ -889,7 +895,7 @@ export class EspHomeClientWrapper extends EventEmitter {
     // This is used for parsing UUIDs from raw BLE advertising data
     // where the UUID bytes are in little-endian (reversed) order
     if (buffer.length < 16) {
-      return '00000000-0000-0000-0000-000000000000';
+      return NULL_UUID;
     }
 
     // Reverse the buffer to convert from little-endian to big-endian
