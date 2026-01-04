@@ -512,6 +512,15 @@ export class EspHomeClientWrapper extends EventEmitter {
       const address = this.extractNumberField(fields, 1) || 0;
       const services = this.parseGATTServices(fields.get(2) || []);
 
+      // Debug logging to show all discovered GATT services and characteristics
+      logInfo(`[ESPHomeClientWrapper] GATT services discovered for ${address.toString(16)}:`);
+      for (const service of services) {
+        logInfo(`  Service UUID: ${service.uuid} (handle: ${service.handle})`);
+        for (const char of service.characteristicsList) {
+          logInfo(`    Characteristic UUID: ${char.uuid} (handle: ${char.handle}, props: 0x${char.properties.toString(16)})`);
+        }
+      }
+
       this.emit(`gatt-services-${address}`, services);
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT services response:', error);
