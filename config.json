@@ -25,7 +25,8 @@
         "name": "KSBT03C000015046",
         "friendlyName": "Keeson Bed"
       }
-    ]
+    ],
+    "filterUnknownDevices": true
   },
   "schema": {
     "mqtt_host": "str",
@@ -33,6 +34,7 @@
     "mqtt_user": "str",
     "mqtt_password": "password",
     "type": "list(keeson)",
+    "filterUnknownDevices": "bool?",
     "bleProxies": [
       {
         "host": "str",

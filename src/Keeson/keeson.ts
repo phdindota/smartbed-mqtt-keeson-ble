@@ -14,6 +14,7 @@ import { isSupported as isBaseI5Supported } from './BaseI5/isSupported';
 import { controllerBuilder as baseI5ControllerBuilder } from './BaseI5/controllerBuilder';
 import { isSupported as isBaseI4Supported } from './BaseI4/isSupported';
 import { controllerBuilder as baseI4ControllerBuilder } from './BaseI4/controllerBuilder';
+import { getRootOptions } from '@utils/options';
 
 const checks = [isKSBTSupported, isBaseI5Supported, isBaseI4Supported];
 const controllerBuilders = [ksbtControllerBuilder, baseI5ControllerBuilder, baseI4ControllerBuilder];
@@ -27,7 +28,11 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
 
   if (deviceNames.length !== devices.length) return logError('[Keeson] Duplicate name detected in configuration');
 
-  const bleDevices = await esphome.getBLEDevices(deviceNames);
+  // Read filterUnknownDevices option (defaults to true)
+  const options = getRootOptions();
+  const filterUnknownDevices = options.filterUnknownDevices !== false; // Default to true if not specified
+  
+  const bleDevices = await esphome.getBLEDevices(deviceNames, undefined, filterUnknownDevices);
   for (const bleDevice of bleDevices) {
     const { name, mac, address, connect, disconnect, getDeviceInfo } = bleDevice;
     const device = devicesMap[mac] || devicesMap[name.toLowerCase()];

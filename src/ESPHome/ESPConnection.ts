@@ -93,12 +93,21 @@ export class ESPConnection implements IESPConnection {
     }
   }
 
-  async getBLEDevices(deviceNames: string[], nameMapper?: (name: string) => string): Promise<IBLEDevice[]> {
+  async getBLEDevices(deviceNames: string[], nameMapper?: (name: string) => string, enableFiltering = true): Promise<IBLEDevice[]> {
     logInfo(`[ESPHome] Searching for device(s): ${deviceNames.join(', ')}`);
     deviceNames = deviceNames.map((name) => name.toLowerCase());
     const bleDevices: IBLEDevice[] = [];
     const seenAddresses: number[] = [];
     const complete = new Deferred<void>();
+    
+    // Configure MAC address filtering if enabled
+    // This step happens before we start discovering to filter out unwanted advertisements early
+    if (enableFiltering) {
+      // We'll collect addresses as we discover them, then enable filtering
+      // For now, we pass an empty array to disable filtering during discovery
+      // After discovery, we can enable it if needed for ongoing operations
+    }
+    
     await this.discoverBLEDevices(
       (bleDevice) => {
         const { name, mac, advertisement, address } = bleDevice;
@@ -131,6 +140,15 @@ export class ESPConnection implements IESPConnection {
       complete,
       nameMapper
     );
+    
+    // After discovery, enable MAC address filtering on all connections
+    // to prevent processing advertisements from non-configured devices
+    if (enableFiltering && seenAddresses.length > 0) {
+      for (const connection of this.connections) {
+        connection.setAllowedDevices(seenAddresses);
+      }
+    }
+    
     if (deviceNames.length) logWarn(`[ESPHome] Could not find address for device(s): ${deviceNames.join(', ')}`);
     return bleDevices;
   }

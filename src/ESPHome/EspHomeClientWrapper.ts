@@ -96,6 +96,7 @@ export class EspHomeClientWrapper extends EventEmitter {
   private readonly BLE_SCAN_RESULTS_DELAY_MS = 2000;
   private lastDisconnectTime: Map<number, number> = new Map();
   private readonly DISCONNECT_DEBOUNCE_MS = 1000;
+  private allowedMacAddresses: Set<number> = new Set();
 
   constructor(config: {
     host: string;
@@ -123,6 +124,31 @@ export class EspHomeClientWrapper extends EventEmitter {
 
     // Set up event forwarding and message handling
     this.setupEventHandlers();
+  }
+
+  /**
+   * Configure MAC address filtering to only process advertisements from specified devices.
+   * When filtering is enabled (non-empty set), only advertisements from devices in the allowed list
+   * will be emitted as events. This reduces processing load and prevents ESP32 connection resets
+   * in environments with many BLE devices.
+   * 
+   * @param addresses - Array of MAC addresses (as numbers) to allow. Empty array disables filtering.
+   */
+  setAllowedDevices(addresses: number[]): void {
+    this.allowedMacAddresses.clear();
+    for (const address of addresses) {
+      this.allowedMacAddresses.add(address);
+    }
+    
+    if (this.allowedMacAddresses.size > 0) {
+      logInfo(
+        `[ESPHomeClientWrapper] MAC filtering enabled for ${this.allowedMacAddresses.size} device(s): ${
+          Array.from(this.allowedMacAddresses).map(a => a.toString(16).padStart(12, '0')).join(', ')
+        }`
+      );
+    } else {
+      logInfo('[ESPHomeClientWrapper] MAC filtering disabled');
+    }
   }
 
   private setupEventHandlers(): void {
@@ -475,6 +501,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       const fields = this.decodeProtobuf(payload);
       
       const address = this.extractNumberField(fields, 1) || 0;
+      
+      // Skip if not in allowed list (when filtering is enabled)
+      if (this.allowedMacAddresses.size > 0 && !this.allowedMacAddresses.has(address)) {
+        return; // Skip this advertisement entirely
+      }
+      
       const nameBytes = this.extractBytesField(fields, 2);
       const name = nameBytes ? nameBytes.toString('utf8') : '';
       const rssi = this.extractNumberField(fields, 3) || 0;
@@ -516,6 +548,12 @@ export class EspHomeClientWrapper extends EventEmitter {
         
         // Extract fields from BluetoothLERawAdvertisement
         const address = this.extractNumberField(adFields, 1) || 0;
+        
+        // Skip if not in allowed list (when filtering is enabled)
+        if (this.allowedMacAddresses.size > 0 && !this.allowedMacAddresses.has(address)) {
+          continue; // Skip this advertisement entirely
+        }
+        
         const rssi = this.decodeSignedVarint(adFields.get(2)?.[0] || Buffer.alloc(0));
         const addressType = this.extractNumberField(adFields, 3) || 0;
         const rawData = this.extractBytesField(adFields, 4) || Buffer.alloc(0);
