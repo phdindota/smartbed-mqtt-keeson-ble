@@ -152,6 +152,10 @@ export class EspHomeClientWrapper extends EventEmitter {
     expectedServerName?: string;
   }) {
     super();
+    
+    // Set max listeners to prevent MaxListenersExceededWarning
+    // Multiple BLE devices can register GATT error listeners on the same wrapper
+    this.setMaxListeners(50);
 
     // Create the base ESPHome client
     this.client = new EspHomeClient({
@@ -369,18 +373,14 @@ export class EspHomeClientWrapper extends EventEmitter {
   }
 
   unsubscribeBluetoothAdvertisementService(): void {
-    if (!this.connected) {
-      logWarn('[ESPHomeClientWrapper] Cannot unsubscribe from BLE advertisements - not connected');
-      return;
-    }
-
-    // Send SubscribeBluetoothLEAdvertisementsRequest with flags = 0 to unsubscribe
-    const payload = this.encodeProtoFields([
-      { fieldNumber: 1, wireType: WireType.VARINT, value: 0 }, // flags = 0 (unsubscribe)
-    ]);
-
-    this.sendMessage(BluetoothMessageType.SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST, payload);
-    logInfo('[ESPHomeClientWrapper] Unsubscribed from Bluetooth LE advertisements');
+    // DEPRECATED: Do not stop BLE scanning as it breaks ESP32 connectivity.
+    // The ESP32 Bluetooth proxy needs active scanning to maintain BLE connections.
+    // Unsubscribing from advertisements stops all BLE activity on the ESP32,
+    // which prevents it from connecting to devices (connection timeout errors).
+    // 
+    // Instead, use MAC address filtering via setAllowedDevices() to reduce CPU load
+    // by filtering out unwanted advertisements at the application layer.
+    logWarn('[ESPHomeClientWrapper] unsubscribeBluetoothAdvertisementService() is deprecated and does nothing. Use setAllowedDevices() for MAC filtering instead.');
   }
 
   async connectBluetoothDeviceService(address: number, addressType: number): Promise<void> {
