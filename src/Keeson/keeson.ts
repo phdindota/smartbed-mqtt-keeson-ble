@@ -19,14 +19,20 @@ import { getRootOptions } from '@utils/options';
 const checks = [isKSBTSupported, isBaseI5Supported, isBaseI4Supported];
 const controllerBuilders = [ksbtControllerBuilder, baseI5ControllerBuilder, baseI4ControllerBuilder];
 
-export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Promise<void> => {
+export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Promise<() => void> => {
   const devices = getDevices();
-  if (!devices.length) return logInfo('[Keeson] No devices configured');
+  if (!devices.length) {
+    logInfo('[Keeson] No devices configured');
+    return () => {}; // Return empty cleanup function
+  }
 
   const devicesMap = buildDictionary(devices, (device) => ({ key: device.name.toLowerCase(), value: device }));
   const deviceNames = Object.keys(devicesMap);
 
-  if (deviceNames.length !== devices.length) return logError('[Keeson] Duplicate name detected in configuration');
+  if (deviceNames.length !== devices.length) {
+    logError('[Keeson] Duplicate name detected in configuration');
+    return () => {}; // Return empty cleanup function
+  }
 
   // Read filterUnknownDevices option (defaults to true if not specified)
   const options = getRootOptions();
@@ -77,4 +83,16 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
     const deviceInfo = await getDeviceInfo();
     if (deviceInfo) setupDeviceInfoSensor(mqtt, controller, deviceInfo);
   }
+  
+  // Return cleanup function that calls cleanup() on all BLE devices
+  return () => {
+    logInfo('[Keeson] Cleaning up BLE devices...');
+    for (const bleDevice of bleDevices) {
+      try {
+        bleDevice.cleanup();
+      } catch (error) {
+        logError('[Keeson] Error cleaning up BLE device:', error);
+      }
+    }
+  };
 };

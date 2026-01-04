@@ -1,12 +1,16 @@
 import { connectToMQTT } from '@mqtt/connectToMQTT';
 import { loadStrings } from '@utils/getString';
-import { logError, logWarn } from '@utils/logger';
+import { logError, logWarn, logInfo } from '@utils/logger';
 import { connectToESPHome } from 'ESPHome/connectToESPHome';
 import { IESPConnection } from 'ESPHome/IESPConnection';
 import { keeson } from 'Keeson/keeson';
 import { IGNORED_MESSAGE_TYPES } from 'ESPHome/constants';
+import { IMQTTConnection } from '@mqtt/IMQTTConnection';
 
 let espHomeConnection: IESPConnection | null = null;
+let mqtt: IMQTTConnection | null = null;
+let keesonCleanup: (() => void) | null = null;
+let isInitializing = false;
 
 const processExit = (exitCode?: number) => {
   if (exitCode && exitCode > 0) {
@@ -60,13 +64,53 @@ process.on('uncaughtException', async (err) => {
   processExit(2);
 });
 
+// Function to initialize Keeson devices
+const initializeKeeson = async () => {
+  if (!mqtt || !espHomeConnection) {
+    logError('[Keeson] Cannot initialize - MQTT or ESPHome connection not available');
+    return;
+  }
+  
+  // Prevent concurrent initialization attempts
+  if (isInitializing) {
+    logWarn('[Keeson] Initialization already in progress, skipping...');
+    return;
+  }
+  
+  isInitializing = true;
+  
+  try {
+    // Clean up old devices if they exist
+    if (keesonCleanup) {
+      logInfo('[Keeson] Cleaning up old devices before re-initialization...');
+      try {
+        keesonCleanup();
+      } catch (error) {
+        logError('[Keeson] Error during cleanup, continuing with re-initialization:', error);
+      }
+      keesonCleanup = null;
+    }
+    
+    // Re-initialize Keeson devices and store new cleanup function
+    logInfo('[Keeson] Initializing devices...');
+    keesonCleanup = await keeson(mqtt, espHomeConnection);
+  } finally {
+    isInitializing = false;
+  }
+};
+
 const start = async () => {
   await loadStrings();
 
-  const mqtt = await connectToMQTT();
-  espHomeConnection = await connectToESPHome();
+  mqtt = await connectToMQTT();
   
-  // Keeson BLE beds only
-  return void (await keeson(mqtt, espHomeConnection));
+  // Pass reconnection callback to ESPHome connection
+  espHomeConnection = await connectToESPHome(async () => {
+    logInfo('[ESPHome] Reconnection detected, re-initializing Keeson devices...');
+    await initializeKeeson();
+  });
+  
+  // Initial Keeson setup
+  await initializeKeeson();
 };
 void start();

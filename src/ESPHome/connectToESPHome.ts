@@ -5,14 +5,14 @@ import { IESPConnection } from './IESPConnection';
 import { connect } from './connect';
 import { BLEProxy, getProxies } from './options';
 
-export const connectToESPHome = async (): Promise<IESPConnection> => {
+export const connectToESPHome = async (onReconnected?: () => void | Promise<void>): Promise<IESPConnection> => {
   logInfo('[ESPHome] Connecting...');
 
   const proxies = getProxies();
 
   if (proxies.length === 0) {
     logWarn('[ESPHome] No proxies configured, returning empty connection');
-    return new ESPConnection([], []);
+    return new ESPConnection([], [], onReconnected);
   }
 
   const connections = await Promise.all(
@@ -27,5 +27,5 @@ export const connectToESPHome = async (): Promise<IESPConnection> => {
     })
   );
 
-  return new ESPConnection(connections, proxies);
+  return new ESPConnection(connections, proxies, onReconnected);
 };

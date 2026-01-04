@@ -16,6 +16,7 @@ export class ESPConnection implements IESPConnection {
     encryptionKey?: string;
     expectedServerName?: string;
   }>;
+  private onReconnectedCallback?: () => void | Promise<void>;
 
   constructor(
     private connections: EspHomeClientWrapper[],
@@ -25,7 +26,8 @@ export class ESPConnection implements IESPConnection {
       password?: string;
       encryptionKey?: string;
       expectedServerName?: string;
-    }>
+    }>,
+    onReconnected?: () => void | Promise<void>
   ) {
     // Store connection configs for reconnection
     if (configs) {
@@ -37,6 +39,9 @@ export class ESPConnection implements IESPConnection {
         port: conn.port,
       }));
     }
+
+    // Store the reconnection callback
+    this.onReconnectedCallback = onReconnected;
 
     // Set up error handlers for each connection
     this.setupErrorHandlers();
@@ -86,6 +91,11 @@ export class ESPConnection implements IESPConnection {
       this.setupErrorHandlers();
 
       logInfo('[ESPHome] Reconnection successful');
+      
+      // Call the reconnection callback if provided
+      if (this.onReconnectedCallback) {
+        await this.onReconnectedCallback();
+      }
     } catch (error) {
       logError('[ESPHome] Reconnection failed:', error);
       throw error;
