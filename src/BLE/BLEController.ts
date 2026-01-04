@@ -52,10 +52,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
       logError('[BLE] Failed to write characteristic', e);
       
       // Stop the timer to prevent spam
-      if (this.timer) {
-        await this.timer.cancel();
-        this.timer = undefined;
-      }
+      await this.cancelCommands();
       
       throw e; // Re-throw so caller knows it failed
     }

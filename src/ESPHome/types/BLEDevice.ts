@@ -174,6 +174,13 @@ export class BLEDevice implements IBLEDevice {
         logWarn(`[BLEDevice] ESPHome disconnected - marking device ${this.mac} as disconnected`);
         this.connected = false;
         this.connecting = false;
+        
+        // Reject any pending connection promise
+        if (this.connectionPromiseReject) {
+          this.connectionPromiseReject(new Error('ESPHome proxy disconnected'));
+          this.connectionPromiseResolve = undefined;
+          this.connectionPromiseReject = undefined;
+        }
       }
     };
     this.connection.on('disconnected', this.espHomeDisconnectedListener);
