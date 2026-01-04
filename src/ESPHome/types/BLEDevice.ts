@@ -13,6 +13,7 @@ export class BLEDevice implements IBLEDevice {
   private connectionAttempts = 0;
   private readonly MAX_CONNECTION_ATTEMPTS = 5;
   private readonly INITIAL_RETRY_DELAY_MS = 1000;
+  private readonly RECONNECTION_WAIT_DELAY_MS = 1000;
   private connectionTimeout?: NodeJS.Timeout;
   private retryTimeout?: NodeJS.Timeout;
   private connectionPromise?: Promise<void>;
@@ -68,6 +69,17 @@ export class BLEDevice implements IBLEDevice {
     }
   }
 
+  private scheduleDelayedRetry(reason: string, delayMs: number): void {
+    // Clear any existing retry timeout before setting a new one
+    if (this.retryTimeout) {
+      clearTimeout(this.retryTimeout);
+    }
+    
+    this.retryTimeout = setTimeout(async () => {
+      this.scheduleRetry(reason);
+    }, delayMs);
+  }
+
   private scheduleRetry(reason: string): void {
     if (this.connectionAttempts >= this.MAX_CONNECTION_ATTEMPTS) {
       logWarn(`[BLEDevice] Maximum connection attempts (${this.MAX_CONNECTION_ATTEMPTS}) reached for device ${this.mac}. Not retrying.`);
@@ -91,29 +103,17 @@ export class BLEDevice implements IBLEDevice {
     }
     
     this.retryTimeout = setTimeout(async () => {
-      // Don't retry if ESPHome is not connected - use fixed 1 second delay
+      // Don't retry if ESPHome is not connected - use fixed delay
       if (!this.connection.isConnected) {
         logInfo(`[BLEDevice] ESPHome not connected, waiting before retry for ${this.mac}`);
-        // Clear existing timeout and set a new one with fixed delay
-        if (this.retryTimeout) {
-          clearTimeout(this.retryTimeout);
-        }
-        this.retryTimeout = setTimeout(async () => {
-          this.scheduleRetry(reason);  // Try again later with same reason
-        }, 1000);
+        this.scheduleDelayedRetry(reason, this.RECONNECTION_WAIT_DELAY_MS);
         return;
       }
       
-      // Don't retry if device hasn't been re-discovered - use fixed 1 second delay
+      // Don't retry if device hasn't been re-discovered - use fixed delay
       if (!this.discovered) {
         logInfo(`[BLEDevice] Device ${this.mac} not yet discovered, waiting...`);
-        // Clear existing timeout and set a new one with fixed delay
-        if (this.retryTimeout) {
-          clearTimeout(this.retryTimeout);
-        }
-        this.retryTimeout = setTimeout(async () => {
-          this.scheduleRetry('waiting for discovery');  // Check again
-        }, 1000);
+        this.scheduleDelayedRetry('waiting for discovery', this.RECONNECTION_WAIT_DELAY_MS);
         return;
       }
       
