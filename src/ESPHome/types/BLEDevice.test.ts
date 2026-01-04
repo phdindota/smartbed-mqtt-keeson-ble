@@ -132,15 +132,8 @@ describe('BLEDevice', () => {
       mockConnection.writeBluetoothGATTCharacteristicService = jest.fn().mockResolvedValue(undefined);
     });
 
-    it('should write successfully when connected', async () => {
-      // First connect
-      const connectPromise = bleDevice.connect();
-      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
-      const connectionHandler = onCall![1];
-      connectionHandler({ address: advertisement.address, connected: true });
-      await connectPromise;
-
-      // Write characteristic
+    it('should write successfully', async () => {
+      // Write characteristic directly (no auto-connect)
       const testData = new Uint8Array([0x01, 0x02, 0x03]);
       await bleDevice.writeCharacteristic(10, testData);
 
@@ -152,43 +145,17 @@ describe('BLEDevice', () => {
       );
     });
 
-    it('should reconnect before writing if not connected', async () => {
-      // Write characteristic when not connected
+    it('should write successfully with response=false', async () => {
+      // Write characteristic with custom response parameter
       const testData = new Uint8Array([0x01, 0x02, 0x03]);
-      const writePromise = bleDevice.writeCharacteristic(10, testData);
+      await bleDevice.writeCharacteristic(10, testData, false);
 
-      // Simulate the connection response
-      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
-      expect(onCall).toBeDefined();
-      const connectionHandler = onCall![1];
-      connectionHandler({ address: advertisement.address, connected: true });
-
-      await writePromise;
-
-      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledWith(
-        advertisement.address,
-        advertisement.addressType
-      );
       expect(mockConnection.writeBluetoothGATTCharacteristicService).toHaveBeenCalledWith(
         advertisement.address,
         10,
         testData,
-        true
+        false
       );
-    });
-
-    it('should throw error if reconnection fails', async () => {
-      // Write characteristic when not connected
-      const testData = new Uint8Array([0x01, 0x02, 0x03]);
-      const writePromise = bleDevice.writeCharacteristic(10, testData);
-
-      // Simulate failed connection response
-      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
-      const connectionHandler = onCall![1];
-      connectionHandler({ address: advertisement.address, connected: false, error: 1 });
-
-      // With connect-per-command pattern (stayConnected=false by default), the error message is from connect()
-      await expect(writePromise).rejects.toThrow('Connection failed for device cfbf8511b3ea: error code 1');
     });
   });
 });

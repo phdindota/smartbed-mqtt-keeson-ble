@@ -18,8 +18,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
   private timer?: Timer;
   private notifyValues: Dictionary<Uint8Array> = {};
   private lastCommands?: number[][];
-  private lastCommandTime = 0;
-  private readonly COMMAND_DEBOUNCE_MS = 500; // Prevent rapid button presses from overwhelming the device
+  private disconnectTimeout?: NodeJS.Timeout;
 
   constructor(
     public deviceData: IDeviceData,
@@ -40,17 +39,13 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
   }
 
   private write = async (command: number[]) => {
-    // Debounce rapid commands to prevent overwhelming the device
-    const now = Date.now();
-    const timeSinceLastCommand = now - this.lastCommandTime;
-    if (timeSinceLastCommand < this.COMMAND_DEBOUNCE_MS) {
-      const waitTime = this.COMMAND_DEBOUNCE_MS - timeSinceLastCommand;
-      await new Promise(r => setTimeout(r, waitTime));
-    }
-    this.lastCommandTime = Date.now();
-
     try {
       await this.bleDevice.writeCharacteristic(this.handle, new Uint8Array(command));
+      
+      // Reset disconnect timeout after each command
+      if (this.stayConnected) {
+        this.resetDisconnectTimeout();
+      }
     } catch (e) {
       logError('[BLE] Failed to write characteristic', e);
       
@@ -69,11 +64,8 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
     const commandList = commands.map(this.commandBuilder).filter((command) => command.length > 0);
     if (commandList.length === 0) return;
 
-    // For stayConnected devices, connect upfront
-    // For non-stayConnected devices, writeCharacteristic handles connect-per-command
-    if (this.stayConnected) {
-      await this.bleDevice.connect();
-    }
+    // Always connect upfront
+    await this.bleDevice.connect();
 
     const onTick =
       commandList.length === 1 ? () => this.write(commandList[0]) : () => loopWithWait(commandList, this.write);
@@ -95,6 +87,23 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
 
   cancelCommands = async () => {
     await this.timer?.cancel();
+  };
+
+  private resetDisconnectTimeout = () => {
+    if (this.disconnectTimeout) {
+      clearTimeout(this.disconnectTimeout);
+    }
+    this.disconnectTimeout = setTimeout(() => {
+      void this.disconnect();
+    }, 60000); // 60 seconds
+  };
+
+  private disconnect = async () => {
+    if (this.disconnectTimeout) {
+      clearTimeout(this.disconnectTimeout);
+      this.disconnectTimeout = undefined;
+    }
+    await this.bleDevice.disconnect();
   };
 
   on = (eventName: string, handler: (data: Uint8Array) => void): this => {
