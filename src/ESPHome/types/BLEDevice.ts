@@ -201,12 +201,32 @@ export class BLEDevice implements IBLEDevice {
       this.connection.on('message.BluetoothDeviceConnectionResponse', this.autoReconnectHandler);
     }
     
-    // Re-register all notify listeners
+    // Re-register all notify listeners on the new connection
+    // Note: The listeners in the map are handler functions, not connection-specific
+    // They will work correctly with the new connection as they only check device address
     for (const listener of this.notifyListeners.values()) {
       this.connection.on('message.BluetoothGATTNotifyDataResponse', listener);
     }
   };
 
+  /**
+   * Updates the connection reference to a new EspHomeClientWrapper instance.
+   * This is used when the ESPHome proxy reconnects and creates a new connection wrapper.
+   * 
+   * The method:
+   * 1. Removes all event listeners from the old connection
+   * 2. Updates the internal connection reference
+   * 3. Resets connection state (connected, connecting, keepalive)
+   * 4. Re-registers all event listeners on the new connection
+   * 
+   * After calling this method, the BLEDevice will use the new connection for all operations.
+   * 
+   * Note: In the current implementation, devices are typically re-created after reconnection
+   * rather than updated in-place. This method provides flexibility for future optimizations
+   * where updating existing devices may be preferred over re-creation.
+   * 
+   * @param newConnection - The new EspHomeClientWrapper to use for this device
+   */
   updateConnection = (newConnection: EspHomeClientWrapper) => {
     // Remove event listeners from old connection
     this.removeEventListeners();
