@@ -127,7 +127,17 @@ describe('BLEDevice', () => {
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
       
-      // After 3rd attempt, should reject with maximum attempts error
+      // Advance timer by third retry delay (4000ms)
+      jest.advanceTimersByTime(4000);
+      await Promise.resolve();
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(4);
+      
+      // Advance timer by fourth retry delay (8000ms)
+      jest.advanceTimersByTime(8000);
+      await Promise.resolve();
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(5);
+      
+      // After 5th attempt, should reject with maximum attempts error
       await expect(connectPromise).rejects.toThrow('Maximum connection attempts');
     });
 
@@ -152,17 +162,27 @@ describe('BLEDevice', () => {
       await Promise.resolve();
       expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
 
-      // After 3rd attempt, should reject and not retry anymore
+      // Trigger retry 3 (delay: 4s)
+      jest.advanceTimersByTime(4000);
+      await Promise.resolve();
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(4);
+
+      // Trigger retry 4 (delay: 8s)
+      jest.advanceTimersByTime(8000);
+      await Promise.resolve();
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(5);
+
+      // After 5th attempt, should reject and not retry anymore
       await expect(connectPromise).rejects.toThrow('Maximum connection attempts');
       
       // Should not retry after maximum attempts reached
       jest.advanceTimersByTime(10000);
       await Promise.resolve();
-      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(5);
 
-      // Fourth attempt should be prevented with error
+      // Sixth attempt should be prevented with error
       await expect(bleDevice.connect()).rejects.toThrow('Maximum connection attempts');
-      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(3);
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledTimes(5);
     });
 
     it('should handle connection timeout and retry', async () => {
