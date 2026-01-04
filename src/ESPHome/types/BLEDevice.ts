@@ -13,6 +13,7 @@ interface BluetoothGATTNotifyDataMessage {
 
 export class BLEDevice implements IBLEDevice {
   private connected = false;
+  private connecting = false;
   private paired = false;
   private notifyListeners: Map<number, (message: BluetoothGATTNotifyDataMessage) => void> = new Map();
 
@@ -115,14 +116,16 @@ export class BLEDevice implements IBLEDevice {
   };
 
   connect = async () => {
-    if (this.connected) {
+    if (this.connected || this.connecting) {
       return;
     }
 
+    this.connecting = true;
     const { addressType } = this.advertisement;
     
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.connecting = false;
         this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
         reject(new Error(`Connection timeout for device ${this.mac}`));
       }, 10000);
@@ -131,6 +134,7 @@ export class BLEDevice implements IBLEDevice {
         if (address !== this.address) return;
         
         clearTimeout(timeout);
+        this.connecting = false;
         this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
         
         if (connected) {
@@ -154,6 +158,7 @@ export class BLEDevice implements IBLEDevice {
       this.connection.on('message.BluetoothDeviceConnectionResponse', connectionHandler);
       this.connection.connectBluetoothDeviceService(this.address, addressType).catch((err) => {
         clearTimeout(timeout);
+        this.connecting = false;
         this.connection.off('message.BluetoothDeviceConnectionResponse', connectionHandler);
         reject(err);
       });
@@ -162,11 +167,14 @@ export class BLEDevice implements IBLEDevice {
 
   disconnect = async () => {
     this.intentionalDisconnect = true;
-    this.connected = false;
-    this.stopKeepalive();
-    await this.connection.disconnectBluetoothDeviceService(this.address);
-    // Reset flag after disconnect completes
-    this.intentionalDisconnect = false;
+    try {
+      this.connected = false;
+      this.stopKeepalive();
+      await this.connection.disconnectBluetoothDeviceService(this.address);
+    } finally {
+      // Reset flag after disconnect completes, even if it throws
+      this.intentionalDisconnect = false;
+    }
   };
 
   cleanup = () => {
