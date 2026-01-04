@@ -56,7 +56,7 @@ const SUPPRESSED_MESSAGE_TYPES = [
   BluetoothMessageType.BLUETOOTH_GATT_ERROR_RESPONSE, // 83
   BluetoothMessageType.BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE, // 93
   BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE, // 126
-];
+] as const;
 
 /**
  * Create a filtered logger that suppresses warnings for known Bluetooth message types.

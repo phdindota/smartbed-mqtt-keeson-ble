@@ -617,6 +617,9 @@ describe('EspHomeClientWrapper', () => {
     let wrapper: EspHomeClientWrapper;
     let consoleWarnSpy: jest.SpyInstance;
 
+    // Helper function to access the internal client logger
+    const getClientLogger = (w: EspHomeClientWrapper) => (w as any).client.logger;
+
     beforeEach(() => {
       // Spy on console.warn to verify suppression
       consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
@@ -633,8 +636,7 @@ describe('EspHomeClientWrapper', () => {
     });
 
     it('should suppress warnings for known Bluetooth message types', () => {
-      // Get the logger that was passed to EspHomeClient
-      const logger = (wrapper as any).client.logger;
+      const logger = getClientLogger(wrapper);
 
       // Test suppression for message type 93 (BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE)
       logger.warn('Unhandled message type: 93');
@@ -654,8 +656,7 @@ describe('EspHomeClientWrapper', () => {
     });
 
     it('should not suppress warnings for unknown message types', () => {
-      // Get the logger that was passed to EspHomeClient
-      const logger = (wrapper as any).client.logger;
+      const logger = getClientLogger(wrapper);
 
       // Test that warnings for non-suppressed message types are still logged
       logger.warn('Unhandled message type: 999');
@@ -666,8 +667,7 @@ describe('EspHomeClientWrapper', () => {
     });
 
     it('should not suppress other warning messages', () => {
-      // Get the logger that was passed to EspHomeClient
-      const logger = (wrapper as any).client.logger;
+      const logger = getClientLogger(wrapper);
 
       // Test that other warnings are not suppressed
       logger.warn('Some other warning message');
@@ -678,8 +678,7 @@ describe('EspHomeClientWrapper', () => {
     });
 
     it('should handle warnings with additional arguments', () => {
-      // Get the logger that was passed to EspHomeClient
-      const logger = (wrapper as any).client.logger;
+      const logger = getClientLogger(wrapper);
 
       // Test that warnings with additional arguments are logged correctly
       logger.warn('Non-Bluetooth warning', { extra: 'data' });
@@ -691,8 +690,7 @@ describe('EspHomeClientWrapper', () => {
     });
 
     it('should suppress all known Bluetooth message types', () => {
-      // Get the logger that was passed to EspHomeClient
-      const logger = (wrapper as any).client.logger;
+      const logger = getClientLogger(wrapper);
 
       // Test all the main suppressed message types mentioned in the problem statement
       // These correspond to the BluetoothMessageType enum values that we handle
