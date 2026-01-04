@@ -656,9 +656,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       }
 
       if (wireType === WireType.VARINT) {
-        const [value, valueBytes] = this.readVarint(buffer, offset);
+        // Read the varint to get its length, but store the raw bytes
+        const [, valueBytes] = this.readVarint(buffer, offset);
+        // Store the raw varint bytes directly to preserve precision for uint64 values
+        const varintData = buffer.subarray(offset, offset + valueBytes);
         offset += valueBytes;
-        fields.get(fieldNumber)!.push(Buffer.from(this.encodeVarint(value)));
+        fields.get(fieldNumber)!.push(varintData);
       } else if (wireType === WireType.LENGTH_DELIMITED) {
         const [length, lengthBytes] = this.readVarint(buffer, offset);
         offset += lengthBytes;
@@ -698,6 +701,26 @@ export class EspHomeClientWrapper extends EventEmitter {
         value += (byte % 128) * (2 ** shift);
       }
       shift += 7;
+
+      if ((byte & 0x80) === 0) {
+        break;
+      }
+    }
+
+    return [value, bytesRead];
+  }
+
+  private readVarintBigInt(buffer: Buffer, offset: number): [bigint, number] {
+    let value = 0n;
+    let shift = 0n;
+    let bytesRead = 0;
+
+    while (offset + bytesRead < buffer.length) {
+      const byte = buffer[offset + bytesRead];
+      bytesRead++;
+
+      value |= BigInt(byte & 0x7f) << shift;
+      shift += 7n;
 
       if ((byte & 0x80) === 0) {
         break;
@@ -748,14 +771,15 @@ export class EspHomeClientWrapper extends EventEmitter {
       const handle = this.extractNumberField(serviceFields, 2) || 0;
       const shortUuid = this.extractNumberField(serviceFields, 4);
 
-      // Parse UUID
+      // Parse UUID - prioritize 128-bit UUID over short UUID
       let uuid: string;
-      if (shortUuid !== undefined) {
-        // Use short UUID (16-bit or 32-bit)
+      if (uuidField && uuidField.length >= 2) {
+        // Use 128-bit UUID from repeated uint64 field
+        const parsed = this.parseUuid128FromRepeatedUint64(uuidField);
+        uuid = parsed || '00000000-0000-0000-0000-000000000000';
+      } else if (shortUuid !== undefined) {
+        // Fall back to short UUID (16-bit or 32-bit)
         uuid = this.formatShortUuid(shortUuid);
-      } else if (uuidField && uuidField.length > 0) {
-        // Use 128-bit UUID
-        uuid = this.parseUuid128(uuidField[0]);
       } else {
         uuid = '00000000-0000-0000-0000-000000000000';
       }
@@ -772,12 +796,13 @@ export class EspHomeClientWrapper extends EventEmitter {
         const properties = this.extractNumberField(charFields, 3) || 0;
         const charShortUuid = this.extractNumberField(charFields, 5);
 
-        // Parse characteristic UUID
+        // Parse characteristic UUID - prioritize 128-bit UUID over short UUID
         let charUuid: string;
-        if (charShortUuid !== undefined) {
+        if (charUuidField && charUuidField.length >= 2) {
+          const parsed = this.parseUuid128FromRepeatedUint64(charUuidField);
+          charUuid = parsed || '00000000-0000-0000-0000-000000000000';
+        } else if (charShortUuid !== undefined) {
           charUuid = this.formatShortUuid(charShortUuid);
-        } else if (charUuidField && charUuidField.length > 0) {
-          charUuid = this.parseUuid128(charUuidField[0]);
         } else {
           charUuid = '00000000-0000-0000-0000-000000000000';
         }
@@ -793,11 +818,13 @@ export class EspHomeClientWrapper extends EventEmitter {
           const descHandle = this.extractNumberField(descFields, 2) || 0;
           const descShortUuid = this.extractNumberField(descFields, 3);
 
+          // Parse descriptor UUID - prioritize 128-bit UUID over short UUID
           let descUuid: string;
-          if (descShortUuid !== undefined) {
+          if (descUuidField && descUuidField.length >= 2) {
+            const parsed = this.parseUuid128FromRepeatedUint64(descUuidField);
+            descUuid = parsed || '00000000-0000-0000-0000-000000000000';
+          } else if (descShortUuid !== undefined) {
             descUuid = this.formatShortUuid(descShortUuid);
-          } else if (descUuidField && descUuidField.length > 0) {
-            descUuid = this.parseUuid128(descUuidField[0]);
           } else {
             descUuid = '00000000-0000-0000-0000-000000000000';
           }
@@ -832,8 +859,34 @@ export class EspHomeClientWrapper extends EventEmitter {
     return `${hex}-0000-1000-8000-00805f9b34fb`;
   }
 
+  private parseUuid128FromRepeatedUint64(buffers: Buffer[]): string | null {
+    // Parse 128-bit UUID from repeated uint64 field (ESPHome protobuf format)
+    // The UUID is sent as two uint64 varints (low and high parts)
+    if (!buffers || buffers.length < 2) {
+      return null;
+    }
+
+    // Decode the two uint64 values from varints using BigInt to preserve all bits
+    const [lowBig] = this.readVarintBigInt(buffers[0], 0);
+    const [highBig] = this.readVarintBigInt(buffers[1], 0);
+
+    // Write the values as little-endian uint64 to get the original bytes
+    const lowBuf = Buffer.alloc(8);
+    const highBuf = Buffer.alloc(8);
+    lowBuf.writeBigUInt64LE(lowBig);
+    highBuf.writeBigUInt64LE(highBig);
+
+    // Combine the buffers and convert to hex string
+    const combined = Buffer.concat([lowBuf, highBuf]);
+    const hex = Array.from(combined).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Format as UUID string
+    return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
+  }
+
   private parseUuid128(buffer: Buffer): string {
-    // Parse 128-bit UUID from two uint64 values
+    // Legacy method for parsing 128-bit UUID from a 16-byte buffer
+    // This is kept for backward compatibility with raw advertising data parsing
     if (buffer.length < 16) {
       return '00000000-0000-0000-0000-000000000000';
     }
