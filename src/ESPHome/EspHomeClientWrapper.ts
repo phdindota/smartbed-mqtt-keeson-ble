@@ -39,6 +39,9 @@ enum WireType {
   FIXED32 = 5,
 }
 
+// Constants
+const NULL_UUID = '00000000-0000-0000-0000-000000000000';
+
 // BLE data structure
 export interface BLEData {
   uuid: string;
@@ -656,9 +659,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       }
 
       if (wireType === WireType.VARINT) {
-        const [value, valueBytes] = this.readVarint(buffer, offset);
+        // Read the varint to get its length, but store the raw bytes
+        const [, valueBytes] = this.readVarint(buffer, offset);
+        // Store the raw varint bytes directly to preserve precision for uint64 values
+        const varintData = buffer.subarray(offset, offset + valueBytes);
         offset += valueBytes;
-        fields.get(fieldNumber)!.push(Buffer.from(this.encodeVarint(value)));
+        fields.get(fieldNumber)!.push(varintData);
       } else if (wireType === WireType.LENGTH_DELIMITED) {
         const [length, lengthBytes] = this.readVarint(buffer, offset);
         offset += lengthBytes;
@@ -698,6 +704,26 @@ export class EspHomeClientWrapper extends EventEmitter {
         value += (byte % 128) * (2 ** shift);
       }
       shift += 7;
+
+      if ((byte & 0x80) === 0) {
+        break;
+      }
+    }
+
+    return [value, bytesRead];
+  }
+
+  private readVarintBigInt(buffer: Buffer, offset: number): [bigint, number] {
+    let value = 0n;
+    let shift = 0n;
+    let bytesRead = 0;
+
+    while (offset + bytesRead < buffer.length) {
+      const byte = buffer[offset + bytesRead];
+      bytesRead++;
+
+      value |= BigInt(byte & 0x7f) << shift;
+      shift += 7n;
 
       if ((byte & 0x80) === 0) {
         break;
@@ -748,16 +774,17 @@ export class EspHomeClientWrapper extends EventEmitter {
       const handle = this.extractNumberField(serviceFields, 2) || 0;
       const shortUuid = this.extractNumberField(serviceFields, 4);
 
-      // Parse UUID
+      // Parse UUID - prioritize 128-bit UUID over short UUID
       let uuid: string;
-      if (shortUuid !== undefined) {
-        // Use short UUID (16-bit or 32-bit)
+      if (uuidField && uuidField.length >= 2) {
+        // Use 128-bit UUID from repeated uint64 field
+        const parsed = this.parseUuid128FromRepeatedUint64(uuidField);
+        uuid = parsed || NULL_UUID;
+      } else if (shortUuid !== undefined) {
+        // Fall back to short UUID (16-bit or 32-bit)
         uuid = this.formatShortUuid(shortUuid);
-      } else if (uuidField && uuidField.length > 0) {
-        // Use 128-bit UUID
-        uuid = this.parseUuid128(uuidField[0]);
       } else {
-        uuid = '00000000-0000-0000-0000-000000000000';
+        uuid = NULL_UUID;
       }
 
       // Parse characteristics
@@ -772,14 +799,15 @@ export class EspHomeClientWrapper extends EventEmitter {
         const properties = this.extractNumberField(charFields, 3) || 0;
         const charShortUuid = this.extractNumberField(charFields, 5);
 
-        // Parse characteristic UUID
+        // Parse characteristic UUID - prioritize 128-bit UUID over short UUID
         let charUuid: string;
-        if (charShortUuid !== undefined) {
+        if (charUuidField && charUuidField.length >= 2) {
+          const parsed = this.parseUuid128FromRepeatedUint64(charUuidField);
+          charUuid = parsed || NULL_UUID;
+        } else if (charShortUuid !== undefined) {
           charUuid = this.formatShortUuid(charShortUuid);
-        } else if (charUuidField && charUuidField.length > 0) {
-          charUuid = this.parseUuid128(charUuidField[0]);
         } else {
-          charUuid = '00000000-0000-0000-0000-000000000000';
+          charUuid = NULL_UUID;
         }
 
         // Parse descriptors (field 4)
@@ -793,13 +821,15 @@ export class EspHomeClientWrapper extends EventEmitter {
           const descHandle = this.extractNumberField(descFields, 2) || 0;
           const descShortUuid = this.extractNumberField(descFields, 3);
 
+          // Parse descriptor UUID - prioritize 128-bit UUID over short UUID
           let descUuid: string;
-          if (descShortUuid !== undefined) {
+          if (descUuidField && descUuidField.length >= 2) {
+            const parsed = this.parseUuid128FromRepeatedUint64(descUuidField);
+            descUuid = parsed || NULL_UUID;
+          } else if (descShortUuid !== undefined) {
             descUuid = this.formatShortUuid(descShortUuid);
-          } else if (descUuidField && descUuidField.length > 0) {
-            descUuid = this.parseUuid128(descUuidField[0]);
           } else {
-            descUuid = '00000000-0000-0000-0000-000000000000';
+            descUuid = NULL_UUID;
           }
 
           descriptorsList.push({
@@ -832,18 +862,54 @@ export class EspHomeClientWrapper extends EventEmitter {
     return `${hex}-0000-1000-8000-00805f9b34fb`;
   }
 
-  private parseUuid128(buffer: Buffer): string {
-    // Parse 128-bit UUID from two uint64 values
-    if (buffer.length < 16) {
-      return '00000000-0000-0000-0000-000000000000';
+  private parseUuid128FromRepeatedUint64(buffers: Buffer[]): string | null {
+    // Parse 128-bit UUID from repeated uint64 field (ESPHome protobuf format)
+    // The UUID is sent as two uint64 varints (low and high parts)
+    if (!buffers || buffers.length === 0) {
+      return null;
+    }
+    
+    if (buffers.length === 1) {
+      logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got 1');
+      return null;
+    }
+    
+    if (buffers.length < 2) {
+      // This shouldn't happen, but handle gracefully
+      return null;
     }
 
-    // Read as little-endian uint64 values
-    const low = buffer.readBigUInt64LE(0);
-    const high = buffer.readBigUInt64LE(8);
+    // Decode the two uint64 values from varints using BigInt to preserve all bits
+    const [lowBig] = this.readVarintBigInt(buffers[0], 0);
+    const [highBig] = this.readVarintBigInt(buffers[1], 0);
 
+    // Write the values as little-endian uint64 to get the original bytes
+    const lowBuf = Buffer.alloc(8);
+    const highBuf = Buffer.alloc(8);
+    lowBuf.writeBigUInt64LE(lowBig);
+    highBuf.writeBigUInt64LE(highBig);
+
+    // Combine the buffers and convert to hex string using native toString('hex')
+    const combined = Buffer.concat([lowBuf, highBuf]);
+    const hex = combined.toString('hex');
+    
     // Format as UUID string
-    const hex = high.toString(16).padStart(16, '0') + low.toString(16).padStart(16, '0');
+    return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
+  }
+
+  private parseUuid128(buffer: Buffer): string {
+    // Legacy method for parsing 128-bit UUID from a 16-byte buffer
+    // This is used for parsing UUIDs from raw BLE advertising data
+    // where the UUID bytes are in little-endian (reversed) order
+    if (buffer.length < 16) {
+      return NULL_UUID;
+    }
+
+    // Reverse the buffer to convert from little-endian to big-endian
+    const reversed = Buffer.from(buffer).reverse();
+    const hex = reversed.toString('hex');
+    
+    // Format as UUID string
     return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
   }
 
