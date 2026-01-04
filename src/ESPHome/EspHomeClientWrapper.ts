@@ -143,6 +143,8 @@ export class EspHomeClientWrapper extends EventEmitter {
   private readonly WRITE_WAIT_RECONNECT_POLL_INTERVAL_MS = 100;
   private allowedMacAddresses: Set<number> = new Set();
   private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
+  private lastConnectionAttempt: Map<number, number> = new Map();
+  private readonly CONNECTION_RATE_LIMIT_MS = 1000; // Minimum 1 second between connection attempts per device
 
   constructor(config: {
     host: string;
@@ -387,6 +389,17 @@ export class EspHomeClientWrapper extends EventEmitter {
     if (!this.connected) {
       throw new Error('Not connected to ESPHome device');
     }
+
+    // Rate limiting: enforce minimum time between connection attempts per device
+    const now = Date.now();
+    const lastTime = this.lastConnectionAttempt.get(address) || 0;
+    const timeSinceLastAttempt = now - lastTime;
+    if (timeSinceLastAttempt < this.CONNECTION_RATE_LIMIT_MS) {
+      const waitTime = this.CONNECTION_RATE_LIMIT_MS - timeSinceLastAttempt;
+      logInfo(`[ESPHomeClientWrapper] Rate limiting connection to ${address.toString(16)}, waiting ${waitTime}ms`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    this.lastConnectionAttempt.set(address, Date.now());
 
     // Send BluetoothDeviceRequest (message type 68)
     // Use V3 connection type (without cache for fresh service discovery)
@@ -760,6 +773,8 @@ export class EspHomeClientWrapper extends EventEmitter {
       );
 
       // GATT error 13 indicates the device is disconnected
+      // Just log and emit event - do NOT trigger automatic reconnection
+      // The connect-per-command pattern in BLEDevice will handle reconnection when needed
       if (error === this.GATT_ERROR_DEVICE_DISCONNECTED) {
         logWarn(`[ESPHomeClientWrapper] Device ${address.toString(16)} disconnected (GATT error 13)`);
         this.emit('deviceDisconnected', address);

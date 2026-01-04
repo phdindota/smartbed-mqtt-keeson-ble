@@ -25,6 +25,14 @@ export class BLEDevice implements IBLEDevice {
   private readonly GENERIC_ACCESS_SERVICE_UUID = '00001800-0000-1000-8000-00805f9b34fb';
   private readonly DEVICE_NAME_CHARACTERISTIC_UUID = '00002a00-0000-1000-8000-00805f9b34fb';
   private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
+  
+  // Command queue and rate limiting for connect-per-command pattern
+  private commandQueue: Array<() => Promise<void>> = [];
+  private processingCommand = false;
+  private lastConnectionAttempt = 0;
+  private readonly CONNECTION_COOLDOWN_MS = 1000; // 1 second between connections to prevent ESP32 overload
+  private readonly CONNECTION_STABILIZATION_MS = 100; // Allow BLE connection to stabilize before sending data
+  private readonly COMMAND_COMPLETION_DELAY_MS = 100; // Allow command to be processed before disconnect
 
   public mac: string;
   public get address() {
@@ -54,6 +62,8 @@ export class BLEDevice implements IBLEDevice {
     if (address !== this.address) return;
     
     // GATT error 13 means device is disconnected
+    // Just mark as disconnected - do NOT trigger automatic reconnection
+    // The connect-per-command pattern will handle reconnection when needed
     if (error === this.GATT_ERROR_DEVICE_DISCONNECTED) {
       this.connected = false;
       this.stopKeepalive();
@@ -153,10 +163,101 @@ export class BLEDevice implements IBLEDevice {
     await this.connection.disconnectBluetoothDeviceService(this.address);
   };
 
+  /**
+   * Process the command queue one command at a time
+   */
+  private async processQueue(): Promise<void> {
+    if (this.processingCommand || this.commandQueue.length === 0) {
+      return;
+    }
+
+    this.processingCommand = true;
+
+    while (this.commandQueue.length > 0) {
+      const command = this.commandQueue.shift();
+      if (command) {
+        try {
+          await command();
+        } catch (error) {
+          // Error already handled in the command, continue processing queue
+        }
+      }
+    }
+
+    this.processingCommand = false;
+  }
+
+  /**
+   * Queue a command to be executed serially
+   */
+  private async queueCommand<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.commandQueue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (e) {
+          reject(e);
+        }
+      });
+      void this.processQueue();
+    });
+  }
+
+  /**
+   * Send a command using connect-send-disconnect pattern
+   * This is the recommended way to send commands to devices that disconnect after each interaction
+   */
+  async sendCommandAndDisconnect(handle: number, bytes: Uint8Array, response = true): Promise<void> {
+    return this.queueCommand(async () => {
+      // Rate limiting: ensure minimum time between connection attempts
+      const now = Date.now();
+      const timeSinceLastAttempt = now - this.lastConnectionAttempt;
+      if (timeSinceLastAttempt < this.CONNECTION_COOLDOWN_MS) {
+        const waitTime = this.CONNECTION_COOLDOWN_MS - timeSinceLastAttempt;
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+      this.lastConnectionAttempt = Date.now();
+
+      try {
+        // Step 1: Connect to device
+        if (!this.connected) {
+          await this.connect();
+        }
+
+        // Step 2: Wait a bit for connection to stabilize
+        await new Promise(r => setTimeout(r, this.CONNECTION_STABILIZATION_MS));
+
+        // Step 3: Send the command
+        await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
+
+        // Step 4: Wait for command to complete
+        await new Promise(r => setTimeout(r, this.COMMAND_COMPLETION_DELAY_MS));
+
+        // Step 5: Gracefully disconnect
+        await this.disconnect();
+
+        // Note: Cooldown is enforced by rate limiting at the start of the next command
+      } catch (error) {
+        // Ensure we disconnect even on error
+        try {
+          await this.disconnect();
+        } catch {
+          // Ignore disconnect errors
+        }
+        throw error;
+      }
+    });
+  }
+
   cleanup = () => {
     this.stopKeepalive();
     this.connection.off('message.BluetoothGATTErrorResponse', this.handleGATTError);
     this.connection.off('deviceDisconnected', this.handleDeviceDisconnected);
+    
+    // Clear command queue
+    this.commandQueue = [];
+    this.processingCommand = false;
     
     // Clean up all notify listeners
     for (const listener of this.notifyListeners.values()) {
@@ -172,6 +273,14 @@ export class BLEDevice implements IBLEDevice {
   }
 
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
+    // For devices that stay connected, use the traditional approach
+    // For devices that disconnect after commands, use sendCommandAndDisconnect() instead
+    if (!this.stayConnected) {
+      // Use connect-per-command pattern for devices that disconnect after interaction
+      return this.sendCommandAndDisconnect(handle, bytes, response);
+    }
+
+    // Traditional persistent connection approach for stayConnected devices
     // Try to reconnect if not connected
     try {
       await this.reconnectIfNeeded();
