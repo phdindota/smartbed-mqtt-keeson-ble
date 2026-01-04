@@ -6,6 +6,7 @@ import { connect } from './connect';
 import { BLEAdvertisement } from './types/BLEAdvertisement';
 import { BLEDevice } from './types/BLEDevice';
 import { IBLEDevice } from './types/IBLEDevice';
+import { IGNORED_MESSAGE_TYPES } from './constants';
 
 export class ESPConnection implements IESPConnection {
   private connectionConfigs: Array<{
@@ -53,13 +54,7 @@ export class ESPConnection implements IESPConnection {
           const messageTypeId = match ? parseInt(match[1], 10) : null;
           
           // Silently ignore expected but unhandled message types
-          const ignoredMessageTypes = [
-            81,  // Disconnect-related message (expected but unhandled)
-            93,  // BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE (handled by wrapper)
-            126, // BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE (handled by wrapper)
-          ];
-          
-          if (messageTypeId && ignoredMessageTypes.includes(messageTypeId)) {
+          if (messageTypeId && IGNORED_MESSAGE_TYPES.includes(messageTypeId)) {
             // Silently ignore - these are expected message types
             return;
           }

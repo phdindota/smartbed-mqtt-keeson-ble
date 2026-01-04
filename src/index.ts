@@ -4,6 +4,7 @@ import { logError, logWarn } from '@utils/logger';
 import { connectToESPHome } from 'ESPHome/connectToESPHome';
 import { IESPConnection } from 'ESPHome/IESPConnection';
 import { keeson } from 'Keeson/keeson';
+import { IGNORED_MESSAGE_TYPES } from 'ESPHome/constants';
 
 let espHomeConnection: IESPConnection | null = null;
 
@@ -32,13 +33,7 @@ process.on('uncaughtException', async (err) => {
     const messageTypeId = match ? parseInt(match[1], 10) : null;
     
     // Silently ignore expected but unhandled message types
-    const ignoredMessageTypes = [
-      81,  // Disconnect-related message (expected but unhandled)
-      93,  // BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE (handled by wrapper)
-      126, // BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE (handled by wrapper)
-    ];
-    
-    if (messageTypeId && ignoredMessageTypes.includes(messageTypeId)) {
+    if (messageTypeId && IGNORED_MESSAGE_TYPES.includes(messageTypeId)) {
       // Silently ignore - these are expected message types
       return;
     }
