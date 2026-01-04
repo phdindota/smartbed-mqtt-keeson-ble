@@ -126,4 +126,68 @@ describe('BLEDevice', () => {
       expect(() => bleDevice.cleanup()).not.toThrow();
     });
   });
+
+  describe('writeCharacteristic', () => {
+    beforeEach(() => {
+      mockConnection.writeBluetoothGATTCharacteristicService = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it('should write successfully when connected', async () => {
+      // First connect
+      const connectPromise = bleDevice.connect();
+      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
+      const connectionHandler = onCall![1];
+      connectionHandler({ address: advertisement.address, connected: true });
+      await connectPromise;
+
+      // Write characteristic
+      const testData = new Uint8Array([0x01, 0x02, 0x03]);
+      await bleDevice.writeCharacteristic(10, testData);
+
+      expect(mockConnection.writeBluetoothGATTCharacteristicService).toHaveBeenCalledWith(
+        advertisement.address,
+        10,
+        testData,
+        true
+      );
+    });
+
+    it('should reconnect before writing if not connected', async () => {
+      // Write characteristic when not connected
+      const testData = new Uint8Array([0x01, 0x02, 0x03]);
+      const writePromise = bleDevice.writeCharacteristic(10, testData);
+
+      // Simulate the connection response
+      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
+      expect(onCall).toBeDefined();
+      const connectionHandler = onCall![1];
+      connectionHandler({ address: advertisement.address, connected: true });
+
+      await writePromise;
+
+      expect(mockConnection.connectBluetoothDeviceService).toHaveBeenCalledWith(
+        advertisement.address,
+        advertisement.addressType
+      );
+      expect(mockConnection.writeBluetoothGATTCharacteristicService).toHaveBeenCalledWith(
+        advertisement.address,
+        10,
+        testData,
+        true
+      );
+    });
+
+    it('should throw error if reconnection fails', async () => {
+      // Write characteristic when not connected
+      const testData = new Uint8Array([0x01, 0x02, 0x03]);
+      const writePromise = bleDevice.writeCharacteristic(10, testData);
+
+      // Simulate failed connection response
+      const onCall = mockConnection.on.mock.calls.find(call => call[0] === 'message.BluetoothDeviceConnectionResponse');
+      const connectionHandler = onCall![1];
+      connectionHandler({ address: advertisement.address, connected: false, error: 1 });
+
+      await expect(writePromise).rejects.toThrow('Cannot write: failed to reconnect to device cfbf8511b3ea');
+    });
+  });
 });

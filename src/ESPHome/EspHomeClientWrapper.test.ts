@@ -449,6 +449,101 @@ describe('EspHomeClientWrapper', () => {
     });
   });
 
+  describe('writeBluetoothGATTCharacteristicService', () => {
+    let wrapper: EspHomeClientWrapper;
+    let mockSendPlaintextMessage: jest.Mock;
+
+    beforeEach(() => {
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+
+      // Mock the sendPlaintextMessage method
+      mockSendPlaintextMessage = jest.fn();
+      (wrapper as any).client.sendPlaintextMessage = mockSendPlaintextMessage;
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+    });
+
+    it('should send write request when connected', async () => {
+      (wrapper as any).connected = true;
+      
+      const address = 0xcfbf8511b3ea;
+      const handle = 10;
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      
+      await wrapper.writeBluetoothGATTCharacteristicService(address, handle, data, true);
+
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+      expect(mockSendPlaintextMessage).toHaveBeenCalledWith(
+        75, // BLUETOOTH_GATT_WRITE_REQUEST
+        expect.any(Buffer)
+      );
+    });
+
+    it('should wait for reconnection when not connected', async () => {
+      (wrapper as any).connected = false;
+      
+      const address = 0xcfbf8511b3ea;
+      const handle = 10;
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      
+      // Start the write operation
+      const writePromise = wrapper.writeBluetoothGATTCharacteristicService(address, handle, data, true);
+
+      // Simulate reconnection after 200ms
+      setTimeout(() => {
+        (wrapper as any).connected = true;
+      }, 200);
+
+      await writePromise;
+
+      // Should have sent the write request after reconnection
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw error if reconnection does not happen within timeout', async () => {
+      (wrapper as any).connected = false;
+      
+      const address = 0xcfbf8511b3ea;
+      const handle = 10;
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      
+      // Start the write operation (this should timeout after 5 seconds)
+      const writePromise = wrapper.writeBluetoothGATTCharacteristicService(address, handle, data, true);
+
+      // Should throw error after waiting
+      await expect(writePromise).rejects.toThrow('Not connected to ESPHome device after waiting');
+
+      // Should not have sent any write request
+      expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
+    }, 10000); // Increase test timeout to 10 seconds
+
+    it('should send write request immediately if reconnection happens quickly', async () => {
+      (wrapper as any).connected = false;
+      
+      const address = 0xcfbf8511b3ea;
+      const handle = 10;
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      
+      // Start the write operation
+      const writePromise = wrapper.writeBluetoothGATTCharacteristicService(address, handle, data, true);
+
+      // Reconnect immediately
+      setTimeout(() => {
+        (wrapper as any).connected = true;
+      }, 50);
+
+      await writePromise;
+
+      // Should have sent the write request
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('MAC address filtering', () => {
     let wrapper: EspHomeClientWrapper;
     let receivedAdvertisements: BLEAdvertisement[];
