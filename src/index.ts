@@ -4,6 +4,7 @@ import { logError, logWarn } from '@utils/logger';
 import { connectToESPHome } from 'ESPHome/connectToESPHome';
 import { IESPConnection } from 'ESPHome/IESPConnection';
 import { keeson } from 'Keeson/keeson';
+import { IGNORED_MESSAGE_TYPES } from 'ESPHome/constants';
 
 let espHomeConnection: IESPConnection | null = null;
 
@@ -27,6 +28,16 @@ process.on('uncaughtException', async (err) => {
   const isUnknownMessageType = errorMessage.includes('Failed find message type for Id:');
   
   if (isUnknownMessageType) {
+    // Extract message type ID from error message
+    const match = errorMessage.match(/Id:\s*(\d+)/);
+    const messageTypeId = match ? parseInt(match[1], 10) : null;
+    
+    // Silently ignore expected but unhandled message types
+    if (messageTypeId && IGNORED_MESSAGE_TYPES.includes(messageTypeId)) {
+      // Silently ignore - these are expected message types
+      return;
+    }
+    
     logWarn('[ESPHome] Unknown message type error (non-fatal):', err);
     
     // Try to reconnect the ESPHome connection if it exists

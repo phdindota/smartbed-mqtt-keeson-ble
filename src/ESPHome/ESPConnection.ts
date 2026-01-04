@@ -6,6 +6,7 @@ import { connect } from './connect';
 import { BLEAdvertisement } from './types/BLEAdvertisement';
 import { BLEDevice } from './types/BLEDevice';
 import { IBLEDevice } from './types/IBLEDevice';
+import { IGNORED_MESSAGE_TYPES } from './constants';
 
 export class ESPConnection implements IESPConnection {
   private connectionConfigs: Array<{
@@ -48,6 +49,16 @@ export class ESPConnection implements IESPConnection {
         const errorMessage = error?.message || String(error);
 
         if (errorMessage.includes('Failed find message type for Id:')) {
+          // Extract message type ID from error message
+          const match = errorMessage.match(/Id:\s*(\d+)/);
+          const messageTypeId = match ? parseInt(match[1], 10) : null;
+          
+          // Silently ignore expected but unhandled message types
+          if (messageTypeId && IGNORED_MESSAGE_TYPES.includes(messageTypeId)) {
+            // Silently ignore - these are expected message types
+            return;
+          }
+          
           logWarn(`[ESPHome] Unknown message type on ${connection.host}:`, errorMessage);
           // Don't crash, just log the warning
         } else {
