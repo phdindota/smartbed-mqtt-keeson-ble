@@ -19,6 +19,8 @@ export class BLEDevice implements IBLEDevice {
   private connectionPromiseResolve?: (value: void | PromiseLike<void>) => void;
   private connectionPromiseReject?: (reason?: any) => void;
   private connectionResponseListener?: (response: any) => void;
+  private espHomeDisconnectedListener?: () => void;
+  private espHomeReconnectedListener?: () => void;
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -165,6 +167,30 @@ export class BLEDevice implements IBLEDevice {
     };
     
     this.connection.on('message.BluetoothDeviceConnectionResponse', this.connectionResponseListener);
+    
+    // Listen for ESPHome disconnection and update BLE device state
+    this.espHomeDisconnectedListener = () => {
+      if (this.connected) {
+        logWarn(`[BLEDevice] ESPHome disconnected - marking device ${this.mac} as disconnected`);
+        this.connected = false;
+        this.connecting = false;
+        
+        // Reject any pending connection promise
+        if (this.connectionPromiseReject) {
+          this.connectionPromiseReject(new Error('ESPHome proxy disconnected'));
+          this.connectionPromiseResolve = undefined;
+          this.connectionPromiseReject = undefined;
+        }
+      }
+    };
+    this.connection.on('disconnected', this.espHomeDisconnectedListener);
+    
+    // Listen for ESPHome reconnection
+    this.espHomeReconnectedListener = () => {
+      logInfo(`[BLEDevice] ESPHome reconnected - device ${this.mac} needs to be reconnected`);
+      // Don't auto-reconnect here - let the controller handle it
+    };
+    this.connection.on('reconnected', this.espHomeReconnectedListener);
   }
 
   pair = async () => {
@@ -235,6 +261,16 @@ export class BLEDevice implements IBLEDevice {
       this.connectionResponseListener = undefined;
     }
     
+    // Remove ESPHome disconnect/reconnect listeners
+    if (this.espHomeDisconnectedListener) {
+      this.connection.off('disconnected', this.espHomeDisconnectedListener);
+      this.espHomeDisconnectedListener = undefined;
+    }
+    if (this.espHomeReconnectedListener) {
+      this.connection.off('reconnected', this.espHomeReconnectedListener);
+      this.espHomeReconnectedListener = undefined;
+    }
+    
     // Clear any pending timeouts
     if (this.connectionTimeout) {
       clearTimeout(this.connectionTimeout);
@@ -249,6 +285,11 @@ export class BLEDevice implements IBLEDevice {
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
     if (!this.connected) {
       throw new Error(`Cannot write characteristic: device ${this.mac} is not connected`);
+    }
+    if (!this.connection.isConnected) {
+      // Mark ourselves as disconnected since ESPHome is gone
+      this.connected = false;
+      throw new Error(`Cannot write characteristic: ESPHome proxy is not connected`);
     }
     await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
   };

@@ -88,6 +88,10 @@ export class EspHomeClientWrapper extends EventEmitter {
   private client: EspHomeClient;
   private connected: boolean = false;
   private messageHandlers: Map<number, (payload: Buffer) => void> = new Map();
+  private reconnecting = false;
+  private reconnectAttempts = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 5;
+  private readonly RECONNECT_DELAY_MS = 2000;
 
   constructor(config: {
     host: string;
@@ -129,6 +133,9 @@ export class EspHomeClientWrapper extends EventEmitter {
       this.connected = false;
       logInfo(`[ESPHomeClientWrapper] Disconnected: ${reason}`);
       this.emit('disconnected', reason);
+      
+      // Attempt to reconnect
+      void this.attemptReconnect();
     });
 
     this.client.on('deviceInfo', (info) => {
@@ -209,6 +216,33 @@ export class EspHomeClientWrapper extends EventEmitter {
       BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE,
       this.handleDeviceClearCacheResponse.bind(this)
     );
+  }
+
+  private async attemptReconnect(): Promise<void> {
+    if (this.reconnecting) return;
+    
+    this.reconnecting = true;
+    this.reconnectAttempts = 0;
+    
+    while (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+      this.reconnectAttempts++;
+      logInfo(`[ESPHomeClientWrapper] Reconnection attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}...`);
+      
+      try {
+        await new Promise(resolve => setTimeout(resolve, this.RECONNECT_DELAY_MS));
+        await this.connect();
+        logInfo('[ESPHomeClientWrapper] Reconnected successfully');
+        this.reconnecting = false;
+        this.emit('reconnected');
+        return;
+      } catch (error) {
+        logWarn(`[ESPHomeClientWrapper] Reconnection attempt ${this.reconnectAttempts} failed:`, error);
+      }
+    }
+    
+    this.reconnecting = false;
+    logError('[ESPHomeClientWrapper] Max reconnection attempts reached. Giving up.');
+    this.emit('reconnectFailed');
   }
 
   async connect(): Promise<void> {
