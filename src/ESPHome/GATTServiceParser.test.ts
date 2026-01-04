@@ -21,11 +21,11 @@ describe('GATT Service Parser', () => {
       // This is 16 bytes: 6e 40 00 01 b5 a3 f3 93 e0 a9 e5 0e 24 dc ca 9e
       //
       // ESPHome sends this as two uint64 values (in protobuf varint format):
-      // First 8 bytes as LE uint64:  6e 40 00 01 b5 a3 f3 93 -> 0x93f3a3b50100406e
-      // Last 8 bytes as LE uint64:   e0 a9 e5 0e 24 dc ca 9e -> 0x9ecadc240ee5a9e0
+      // First 8 bytes as BE uint64:  6e 40 00 01 b5 a3 f3 93 -> 0x6e400001b5a3f393
+      // Last 8 bytes as BE uint64:   e0 a9 e5 0e 24 dc ca 9e -> 0xe0a9e50e24dcca9e
       
-      const lowPart = 0x93f3a3b50100406en;
-      const highPart = 0x9ecadc240ee5a9e0n;
+      const lowPart = 0x6e400001b5a3f393n;
+      const highPart = 0xe0a9e50e24dcca9en;
 
       // Create a GATT service with the Nordic UART Service UUID
       const serviceBuffer = encodeGATTService(
@@ -45,13 +45,13 @@ describe('GATT Service Parser', () => {
     it('should parse service with characteristics having 128-bit UUIDs', () => {
       // Nordic UART Service TX characteristic: 6e400003-b5a3-f393-e0a9-e50e24dcca9e
       // Bytes: 6e 40 00 03 b5 a3 f3 93 e0 a9 e5 0e 24 dc ca 9e
-      // First 8 bytes as LE uint64:  6e 40 00 03 b5 a3 f3 93 -> 0x93f3a3b50300406e
-      // Last 8 bytes as LE uint64:   e0 a9 e5 0e 24 dc ca 9e -> 0x9ecadc240ee5a9e0
+      // First 8 bytes as BE uint64:  6e 40 00 03 b5 a3 f3 93 -> 0x6e400003b5a3f393
+      // Last 8 bytes as BE uint64:   e0 a9 e5 0e 24 dc ca 9e -> 0xe0a9e50e24dcca9e
       
-      const serviceLow = 0x93f3a3b50100406en;
-      const serviceHigh = 0x9ecadc240ee5a9e0n;
-      const charLow = 0x93f3a3b50300406en;
-      const charHigh = 0x9ecadc240ee5a9e0n;
+      const serviceLow = 0x6e400001b5a3f393n;
+      const serviceHigh = 0xe0a9e50e24dcca9en;
+      const charLow = 0x6e400003b5a3f393n;
+      const charHigh = 0xe0a9e50e24dcca9en;
 
       const characteristicBuffer = encodeGATTCharacteristic(
         charLow,
@@ -80,8 +80,8 @@ describe('GATT Service Parser', () => {
 
     it('should prioritize 128-bit UUID over short UUID when both present', () => {
       // If for some reason both are present, 128-bit should win
-      const lowPart = 0x93f3a3b50100406en;
-      const highPart = 0x9ecadc240ee5a9e0n;
+      const lowPart = 0x6e400001b5a3f393n;
+      const highPart = 0xe0a9e50e24dcca9en;
 
       const serviceBuffer = encodeGATTServiceWithShortUuid(
         lowPart,
@@ -115,8 +115,8 @@ describe('GATT Service Parser', () => {
     it('should handle descriptors with 128-bit UUIDs', () => {
       // Custom descriptor UUID: fedcba09-8765-4321-1234-567890abcdef
       // Bytes: fe dc ba 09 87 65 43 21 12 34 56 78 90 ab cd ef
-      const descLow = 0x2143658709badcfen;
-      const descHigh = 0xefcdab9078563412n;
+      const descLow = 0xfedcba0987654321n;
+      const descHigh = 0x1234567890abcdefn;
 
       const descriptorBuffer = encodeGATTDescriptor(
         descLow,
@@ -124,8 +124,8 @@ describe('GATT Service Parser', () => {
         15 // handle
       );
 
-      const charLow = 0x93f3a3b50300406en;
-      const charHigh = 0x9ecadc240ee5a9e0n;
+      const charLow = 0x6e400003b5a3f393n;
+      const charHigh = 0xe0a9e50e24dcca9en;
 
       const characteristicBuffer = encodeGATTCharacteristic(
         charLow,
@@ -135,8 +135,8 @@ describe('GATT Service Parser', () => {
         [descriptorBuffer]
       );
 
-      const serviceLow = 0x93f3a3b50100406en;
-      const serviceHigh = 0x9ecadc240ee5a9e0n;
+      const serviceLow = 0x6e400001b5a3f393n;
+      const serviceHigh = 0xe0a9e50e24dcca9en;
 
       const serviceBuffer = encodeGATTService(
         serviceLow,

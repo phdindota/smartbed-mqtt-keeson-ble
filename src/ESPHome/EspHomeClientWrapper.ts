@@ -910,13 +910,8 @@ export class EspHomeClientWrapper extends EventEmitter {
       return null;
     }
     
-    if (buffers.length === 1) {
-      logWarn(`[UUID Parse] Expected 2 buffers, got ${buffers.length}`);
-      return null;
-    }
-    
     if (buffers.length < 2) {
-      // This shouldn't happen, but handle gracefully
+      logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got', buffers.length);
       return null;
     }
 
@@ -933,20 +928,17 @@ export class EspHomeClientWrapper extends EventEmitter {
     lowBuf.writeBigUInt64LE(lowBig);
     highBuf.writeBigUInt64LE(highBig);
 
-    logInfo(`[UUID Parse] Low buffer (LE): ${lowBuf.toString('hex')}`);
-    logInfo(`[UUID Parse] High buffer (LE): ${highBuf.toString('hex')}`);
+    // IMPORTANT FIX: Reverse each 8-byte segment to convert from little-endian to big-endian byte order
+    // This is needed because Bluetooth UUIDs are displayed in big-endian format
+    const lowReversed = Buffer.from(lowBuf).reverse();
+    const highReversed = Buffer.from(highBuf).reverse();
 
-    // Combine the buffers and convert to hex string using native toString('hex')
-    const combined = Buffer.concat([lowBuf, highBuf]);
+    // Combine the reversed buffers and convert to hex string
+    const combined = Buffer.concat([lowReversed, highReversed]);
     const hex = combined.toString('hex');
     
-    logInfo(`[UUID Parse] Combined hex: ${hex}`);
-    
-    // Format as UUID string
-    const result = `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
-    logInfo(`[UUID Parse] Final UUID: ${result}`);
-    
-    return result;
+    // Format as UUID string: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
   }
 
   private parseUuid128(buffer: Buffer): string {
