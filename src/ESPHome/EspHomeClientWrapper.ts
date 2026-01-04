@@ -898,11 +898,16 @@ export class EspHomeClientWrapper extends EventEmitter {
     lowBuf.writeBigUInt64LE(lowBig);
     highBuf.writeBigUInt64LE(highBig);
 
-    // Combine the buffers and convert to hex string using native toString('hex')
-    const combined = Buffer.concat([lowBuf, highBuf]);
+    // IMPORTANT FIX: Reverse each 8-byte segment to convert from little-endian to big-endian byte order
+    // This is needed because Bluetooth UUIDs are displayed in big-endian format
+    const lowReversed = Buffer.from(lowBuf).reverse();
+    const highReversed = Buffer.from(highBuf).reverse();
+
+    // Combine the reversed buffers and convert to hex string
+    const combined = Buffer.concat([lowReversed, highReversed]);
     const hex = combined.toString('hex');
     
-    // Format as UUID string
+    // Format as UUID string: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
   }
 
