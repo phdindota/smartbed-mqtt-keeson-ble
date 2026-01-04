@@ -694,10 +694,11 @@ describe('EspHomeClientWrapper', () => {
       // Get the logger that was passed to EspHomeClient
       const logger = (wrapper as any).client.logger;
 
-      // Test all suppressed message types: 67, 69, 71, 72, 74, 79, 81, 83, 93, 126
-      const suppressedTypes = [67, 69, 71, 72, 74, 79, 81, 83, 93, 126];
+      // Test all the main suppressed message types mentioned in the problem statement
+      // These correspond to the BluetoothMessageType enum values that we handle
+      const knownTypes = [67, 69, 71, 72, 74, 79, 81, 83, 93, 126];
       
-      for (const type of suppressedTypes) {
+      for (const type of knownTypes) {
         logger.warn(`Unhandled message type: ${type}`);
       }
 

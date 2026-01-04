@@ -45,7 +45,18 @@ const NULL_UUID = '00000000-0000-0000-0000-000000000000';
 // Message types we handle ourselves - suppress warnings from esphome-client
 // These are Bluetooth proxy message types that esphome-client doesn't have built-in handlers for,
 // but we handle them via the 'message' event in our setupBluetoothMessageHandlers() method.
-const SUPPRESSED_MESSAGE_TYPES = [67, 69, 71, 72, 74, 79, 81, 83, 93, 126];
+const SUPPRESSED_MESSAGE_TYPES = [
+  BluetoothMessageType.BLUETOOTH_LE_ADVERTISEMENT_RESPONSE, // 67
+  BluetoothMessageType.BLUETOOTH_DEVICE_CONNECTION_RESPONSE, // 69
+  BluetoothMessageType.BLUETOOTH_GATT_GET_SERVICES_RESPONSE, // 71
+  BluetoothMessageType.BLUETOOTH_GATT_GET_SERVICES_DONE_RESPONSE, // 72
+  BluetoothMessageType.BLUETOOTH_GATT_READ_RESPONSE, // 74
+  BluetoothMessageType.BLUETOOTH_GATT_NOTIFY_DATA_RESPONSE, // 79
+  81, // Unknown BLE scan control message type (not in enum but observed in logs)
+  BluetoothMessageType.BLUETOOTH_GATT_ERROR_RESPONSE, // 83
+  BluetoothMessageType.BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE, // 93
+  BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE, // 126
+];
 
 /**
  * Create a filtered logger that suppresses warnings for known Bluetooth message types.
