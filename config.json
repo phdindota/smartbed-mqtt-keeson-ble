@@ -1,6 +1,6 @@
 {
   "name": "Keeson Bed MQTT",
-  "version": "1.1.22",
+  "version": "2.0.0",
   "slug": "keeson-bed-mqtt",
   "description": "A Home Assistant add-on to enable controlling Keeson smart beds via BLE.",
   "url": "https://github.com/phdindota/smartbed-mqtt-keeson-ble",
