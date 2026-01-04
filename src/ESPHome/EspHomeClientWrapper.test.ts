@@ -799,9 +799,137 @@ describe('EspHomeClientWrapper', () => {
       expect(consoleWarnSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe('handleGATTError', () => {
+    let wrapper: EspHomeClientWrapper;
+    let deviceDisconnectedEvents: number[];
+    let gattErrorEvents: Array<{ address: number; error: number }>;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      deviceDisconnectedEvents = [];
+      gattErrorEvents = [];
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+
+      // Listen for deviceDisconnected events
+      wrapper.on('deviceDisconnected', (address: number) => {
+        deviceDisconnectedEvents.push(address);
+      });
+
+      // Listen for BluetoothGATTErrorResponse events
+      wrapper.on('message.BluetoothGATTErrorResponse', (data: { address: number; error: number }) => {
+        gattErrorEvents.push(data);
+      });
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+      jest.useRealTimers();
+    });
+
+    it('should emit deviceDisconnected event for GATT error 13', () => {
+      const address = 0xcfbf8511b3ea; // Example device address
+      const errorCode = 13; // GATT_ERROR_DEVICE_DISCONNECTED
+
+      // Encode GATT error response
+      const payload = encodeGATTErrorResponse(address, errorCode);
+
+      // Trigger the handler
+      (wrapper as any).handleGATTError(payload);
+
+      // Verify events were emitted
+      expect(deviceDisconnectedEvents).toEqual([address]);
+      expect(gattErrorEvents).toEqual([{ address, error: errorCode }]);
+    });
+
+    it('should rate-limit GATT error 13 logging to once per 5 seconds per device', () => {
+      const address = 0xcfbf8511b3ea;
+      const errorCode = 13;
+      const payload = encodeGATTErrorResponse(address, errorCode);
+
+      // First error should be logged (not testing actual log output, just behavior)
+      (wrapper as any).handleGATTError(payload);
+      expect(deviceDisconnectedEvents).toHaveLength(1);
+      expect(gattErrorEvents).toHaveLength(1);
+
+      // Second error immediately after - event should still be emitted
+      (wrapper as any).handleGATTError(payload);
+      expect(deviceDisconnectedEvents).toHaveLength(2);
+      expect(gattErrorEvents).toHaveLength(2);
+
+      // Third error - event should still be emitted
+      (wrapper as any).handleGATTError(payload);
+      expect(deviceDisconnectedEvents).toHaveLength(3);
+      expect(gattErrorEvents).toHaveLength(3);
+
+      // Advance time by 4 seconds (not enough for rate limit)
+      jest.advanceTimersByTime(4000);
+      (wrapper as any).handleGATTError(payload);
+      expect(deviceDisconnectedEvents).toHaveLength(4);
+      expect(gattErrorEvents).toHaveLength(4);
+
+      // Advance time by another 2 seconds (total 6 seconds, past the 5 second limit)
+      jest.advanceTimersByTime(2000);
+      (wrapper as any).handleGATTError(payload);
+      expect(deviceDisconnectedEvents).toHaveLength(5);
+      expect(gattErrorEvents).toHaveLength(5);
+    });
+
+    it('should rate-limit GATT error 13 independently per device', () => {
+      const address1 = 0xcfbf8511b3ea;
+      const address2 = 0xaabbccddeeff;
+      const errorCode = 13;
+
+      const payload1 = encodeGATTErrorResponse(address1, errorCode);
+      const payload2 = encodeGATTErrorResponse(address2, errorCode);
+
+      // First error from device 1
+      (wrapper as any).handleGATTError(payload1);
+      expect(deviceDisconnectedEvents).toEqual([address1]);
+
+      // First error from device 2 immediately after
+      (wrapper as any).handleGATTError(payload2);
+      expect(deviceDisconnectedEvents).toEqual([address1, address2]);
+
+      // Both devices should have emitted events
+      expect(gattErrorEvents).toHaveLength(2);
+    });
+
+    it('should not rate-limit non-error-13 GATT errors', () => {
+      const address = 0xcfbf8511b3ea;
+      const errorCode = 5; // Some other GATT error
+
+      const payload = encodeGATTErrorResponse(address, errorCode);
+
+      // Multiple errors should all be logged (no rate limiting for non-13 errors)
+      (wrapper as any).handleGATTError(payload);
+      (wrapper as any).handleGATTError(payload);
+      (wrapper as any).handleGATTError(payload);
+
+      // All errors should emit events
+      expect(gattErrorEvents).toHaveLength(3);
+      // But deviceDisconnected should NOT be emitted for non-13 errors
+      expect(deviceDisconnectedEvents).toHaveLength(0);
+    });
+  });
 });
 
 // Helper functions to encode protobuf messages for testing
+
+function encodeGATTErrorResponse(address: number, error: number): Buffer {
+  const parts: Buffer[] = [];
+
+  // Field 1: address (uint64, wire type 0)
+  parts.push(encodeProtoField(1, 0, encodeVarint(address)));
+
+  // Field 2: error (uint32, wire type 0)
+  parts.push(encodeProtoField(2, 0, encodeVarint(error)));
+
+  return Buffer.concat(parts);
+}
 
 function encodeVarint(value: number): Buffer {
   const bytes: number[] = [];
