@@ -126,8 +126,8 @@ export class BLEDevice implements IBLEDevice {
     // Check if device has been discovered before attempting connection
     if (!this.discovered) {
       logInfo(`[BLEDevice] Waiting for device ${this.mac} to be re-discovered...`);
-      // Don't count this as an attempt, just wait
-      this.connecting = false;
+      // Don't count this as an attempt, schedule a delayed retry to check again
+      this.scheduleDelayedRetry('waiting for discovery', this.RECONNECTION_WAIT_DELAY_MS);
       return;
     }
     
@@ -258,9 +258,13 @@ export class BLEDevice implements IBLEDevice {
     
     // Listen for BLE advertisements to mark device as discovered
     this.advertisementListener = (advertisement: BLEAdvertisement) => {
-      // Check if this advertisement is for our device
-      if (advertisement.address === this.address) {
-        this.markDiscovered();
+      try {
+        // Check if this advertisement is for our device
+        if (advertisement && typeof advertisement.address === 'number' && advertisement.address === this.address) {
+          this.markDiscovered();
+        }
+      } catch (error) {
+        logWarn(`[BLEDevice] Error processing advertisement for ${this.mac}:`, error);
       }
     };
     this.connection.on('message.BluetoothLEAdvertisementResponse', this.advertisementListener);
