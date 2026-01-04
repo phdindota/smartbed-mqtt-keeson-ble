@@ -187,7 +187,8 @@ describe('BLEDevice', () => {
       const connectionHandler = onCall![1];
       connectionHandler({ address: advertisement.address, connected: false, error: 1 });
 
-      await expect(writePromise).rejects.toThrow('Cannot write: failed to reconnect to device cfbf8511b3ea');
+      // With connect-per-command pattern (stayConnected=false by default), the error message is from connect()
+      await expect(writePromise).rejects.toThrow('Connection failed for device cfbf8511b3ea: error code 1');
     });
   });
 });
