@@ -878,13 +878,8 @@ export class EspHomeClientWrapper extends EventEmitter {
       return null;
     }
     
-    if (buffers.length === 1) {
-      logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got 1');
-      return null;
-    }
-    
     if (buffers.length < 2) {
-      // This shouldn't happen, but handle gracefully
+      logWarn('[ESPHomeClientWrapper] Malformed 128-bit UUID: expected 2 uint64 values, got', buffers.length);
       return null;
     }
 
