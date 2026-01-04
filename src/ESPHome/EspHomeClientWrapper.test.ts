@@ -326,14 +326,14 @@ describe('EspHomeClientWrapper', () => {
       // Decode the payload to verify the fields
       const payload = mockSendPlaintextMessage.mock.calls[0][1] as Buffer;
       
-      // Expected payload:
-      // Field 1 (address): tag=(1<<3)|0=8, then varint of address
-      // Field 2 (request_type): tag=(2<<3)|0=16, then varint value 5 (CONNECT_V3_WITHOUT_CACHE)
-      // Field 3 (has_address_type): tag=(3<<3)|0=24, then varint value 1
-      // Field 4 (address_type): tag=(4<<3)|0=32, then varint value 0
+      // Expected payload structure (protobuf encoded):
+      // Field 1 (address): tag=(1<<3)|0=0x08, then varint of address
+      // Field 2 (request_type): tag=(2<<3)|0=0x10, then varint value 5 (CONNECT_V3_WITHOUT_CACHE)
+      // Field 3 (has_address_type): tag=(3<<3)|0=0x18, then varint value 1
+      // Field 4 (address_type): tag=(4<<3)|0=0x20, then varint value 0
       
-      // The payload should contain request_type = 5
-      // We can verify this by checking that byte at position where field 2 starts contains 0x10 (tag) followed by 0x05 (value)
+      // Verify that the payload contains field 2 (tag=0x10) with value 5 (0x05)
+      // This confirms we're sending CONNECT_V3_WITHOUT_CACHE instead of deprecated CONNECT (0)
       expect(payload.includes(Buffer.from([0x10, 0x05]))).toBe(true);
     });
 

@@ -26,8 +26,8 @@ enum BluetoothDeviceRequestType {
   DISCONNECT = 1,
   PAIR = 2,
   UNPAIR = 3,
-  CONNECT_V3_WITH_CACHE = 4,  // Use this for V3 connections
-  CONNECT_V3_WITHOUT_CACHE = 5,
+  CONNECT_V3_WITH_CACHE = 4,  // V3 connection using cached GATT services (faster, use for reconnections)
+  CONNECT_V3_WITHOUT_CACHE = 5,  // V3 connection with fresh GATT discovery (slower but safer, use for first connections)
   CLEAR_CACHE = 6,
 }
 
