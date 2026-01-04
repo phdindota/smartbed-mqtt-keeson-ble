@@ -260,7 +260,7 @@ export class BLEDevice implements IBLEDevice {
     this.advertisementListener = (advertisement: BLEAdvertisement) => {
       try {
         // Check if this advertisement is for our device
-        if (advertisement && typeof advertisement.address === 'number' && advertisement.address === this.address) {
+        if (advertisement && advertisement.address === this.address) {
           this.markDiscovered();
         }
       } catch (error) {
