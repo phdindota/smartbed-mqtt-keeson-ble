@@ -145,6 +145,8 @@ export class EspHomeClientWrapper extends EventEmitter {
   private readonly GATT_ERROR_DEVICE_DISCONNECTED = 13;
   private lastConnectionAttempt: Map<number, number> = new Map();
   private readonly CONNECTION_RATE_LIMIT_MS = 1000; // Minimum 1 second between connection attempts per device
+  private lastGattError13Log: Map<number, number> = new Map();
+  private readonly GATT_ERROR_LOG_RATE_LIMIT_MS = 5000; // Log at most once per 5 seconds per device
 
   constructor(config: {
     host: string;
@@ -768,16 +770,24 @@ export class EspHomeClientWrapper extends EventEmitter {
         error,
       });
 
-      logWarn(
-        `[ESPHomeClientWrapper] GATT error for device ${address.toString(16)}: error code ${error}`
-      );
-
       // GATT error 13 indicates the device is disconnected
-      // Just log and emit event - do NOT trigger automatic reconnection
-      // The connect-per-command pattern in BLEDevice will handle reconnection when needed
+      // Rate-limit logging to prevent log spam (max 1 log per 5 seconds per device)
+      // But always emit the event for internal state management
       if (error === this.GATT_ERROR_DEVICE_DISCONNECTED) {
-        logWarn(`[ESPHomeClientWrapper] Device ${address.toString(16)} disconnected (GATT error 13)`);
+        const now = Date.now();
+        const lastLog = this.lastGattError13Log.get(address) || 0;
+        
+        if (now - lastLog >= this.GATT_ERROR_LOG_RATE_LIMIT_MS) {
+          logWarn(`[ESPHomeClientWrapper] Device ${address.toString(16)} disconnected (GATT error 13)`);
+          this.lastGattError13Log.set(address, now);
+        }
+        // Always emit the event, just don't log every time
         this.emit('deviceDisconnected', address);
+      } else {
+        // Log other GATT errors normally (without rate limiting)
+        logWarn(
+          `[ESPHomeClientWrapper] GATT error for device ${address.toString(16)}: error code ${error}`
+        );
       }
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT error response:', error);
