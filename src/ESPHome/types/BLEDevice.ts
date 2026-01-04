@@ -84,6 +84,14 @@ export class BLEDevice implements IBLEDevice {
   };
 
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
+    // Try to reconnect if not connected
+    if (!this.connected) {
+      try {
+        await this.connect();
+      } catch (error) {
+        throw new Error(`Cannot write: failed to reconnect to device ${this.mac}`);
+      }
+    }
     await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
   };
 

@@ -139,6 +139,8 @@ export class EspHomeClientWrapper extends EventEmitter {
   private readonly BLE_SCAN_RESULTS_DELAY_MS = 2000;
   private lastDisconnectTime: Map<number, number> = new Map();
   private readonly DISCONNECT_DEBOUNCE_MS = 1000;
+  private readonly WRITE_WAIT_RECONNECT_TIMEOUT_MS = 5000;
+  private readonly WRITE_WAIT_RECONNECT_POLL_INTERVAL_MS = 100;
   private allowedMacAddresses: Set<number> = new Set();
 
   constructor(config: {
@@ -503,7 +505,16 @@ export class EspHomeClientWrapper extends EventEmitter {
     response: boolean
   ): Promise<void> {
     if (!this.connected) {
-      throw new Error('Not connected to ESPHome device');
+      logWarn('[ESPHomeClientWrapper] Not connected, waiting for reconnection...');
+      // Wait up to WRITE_WAIT_RECONNECT_TIMEOUT_MS for reconnection
+      const maxAttempts = this.WRITE_WAIT_RECONNECT_TIMEOUT_MS / this.WRITE_WAIT_RECONNECT_POLL_INTERVAL_MS;
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(resolve => setTimeout(resolve, this.WRITE_WAIT_RECONNECT_POLL_INTERVAL_MS));
+        if (this.connected) break;
+      }
+      if (!this.connected) {
+        throw new Error('Not connected to ESPHome device after waiting');
+      }
     }
 
     // Send write request
