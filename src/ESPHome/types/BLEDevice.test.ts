@@ -17,10 +17,12 @@ describe('BLEDevice', () => {
   let advertisement: BLEAdvertisement;
   let bleDevice: BLEDevice;
   let connectionResponseHandler: any;
+  let mockIsConnected: boolean;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    mockIsConnected = true;
 
     // Create mock connection
     mockConnection = {
@@ -30,6 +32,7 @@ describe('BLEDevice', () => {
         }
       }),
       off: jest.fn(),
+      get isConnected() { return mockIsConnected; }, // Mock ESPHome as connected
       connectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
       disconnectBluetoothDeviceService: jest.fn().mockResolvedValue(undefined),
       pairBluetoothDeviceService: jest.fn().mockResolvedValue({ paired: true }),
@@ -251,6 +254,49 @@ describe('BLEDevice', () => {
       await Promise.resolve();
 
       expect(mockConnection.connectBluetoothDeviceService).not.toHaveBeenCalled();
+    });
+
+    it('should not send disconnect request if already disconnected', async () => {
+      // Device is not connected (initial state)
+      await bleDevice.disconnect();
+      
+      // Should not send disconnect request
+      expect(mockConnection.disconnectBluetoothDeviceService).not.toHaveBeenCalled();
+    });
+
+    it('should not send disconnect request if ESPHome is not connected', async () => {
+      // Connect the device first
+      const connectPromise = bleDevice.connect();
+      connectionResponseHandler({ address: advertisement.address, connected: true });
+      await connectPromise;
+      
+      // Clear the mock
+      mockConnection.disconnectBluetoothDeviceService.mockClear();
+      
+      // Simulate ESPHome disconnection
+      mockIsConnected = false;
+      
+      // Try to disconnect
+      await bleDevice.disconnect();
+      
+      // Should not send disconnect request to ESPHome
+      expect(mockConnection.disconnectBluetoothDeviceService).not.toHaveBeenCalled();
+    });
+
+    it('should send disconnect request when connected and ESPHome is connected', async () => {
+      // Connect the device first
+      const connectPromise = bleDevice.connect();
+      connectionResponseHandler({ address: advertisement.address, connected: true });
+      await connectPromise;
+      
+      // Clear the mock
+      mockConnection.disconnectBluetoothDeviceService.mockClear();
+      
+      // Disconnect
+      await bleDevice.disconnect();
+      
+      // Should send disconnect request
+      expect(mockConnection.disconnectBluetoothDeviceService).toHaveBeenCalledWith(advertisement.address);
     });
   });
 

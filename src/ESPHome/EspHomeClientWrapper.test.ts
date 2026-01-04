@@ -351,6 +351,103 @@ describe('EspHomeClientWrapper', () => {
       expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
     });
   });
+
+  describe('disconnectBluetoothDeviceService', () => {
+    let wrapper: EspHomeClientWrapper;
+    let mockSendPlaintextMessage: jest.Mock;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+
+      // Mock the sendPlaintextMessage method
+      mockSendPlaintextMessage = jest.fn();
+      (wrapper as any).client.sendPlaintextMessage = mockSendPlaintextMessage;
+      (wrapper as any).connected = true; // Simulate connected state
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+      jest.useRealTimers();
+    });
+
+    it('should send disconnect request when called', async () => {
+      const address = 0xcfbf8511b3ea;
+
+      await wrapper.disconnectBluetoothDeviceService(address);
+
+      // Verify sendPlaintextMessage was called
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+      
+      // Verify it was called with the correct message type (68 = BLUETOOTH_DEVICE_REQUEST)
+      expect(mockSendPlaintextMessage).toHaveBeenCalledWith(
+        68, // BLUETOOTH_DEVICE_REQUEST
+        expect.any(Buffer)
+      );
+    });
+
+    it('should debounce rapid disconnect requests for the same device', async () => {
+      const address = 0xcfbf8511b3ea;
+
+      // Send first disconnect request
+      await wrapper.disconnectBluetoothDeviceService(address);
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+
+      // Send second disconnect request immediately
+      await wrapper.disconnectBluetoothDeviceService(address);
+      // Should be debounced - still only 1 call
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+
+      // Send third disconnect request immediately
+      await wrapper.disconnectBluetoothDeviceService(address);
+      // Should still be debounced
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should allow disconnect request after debounce period', async () => {
+      const address = 0xcfbf8511b3ea;
+
+      // Send first disconnect request
+      await wrapper.disconnectBluetoothDeviceService(address);
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+
+      // Advance time past debounce period (1000ms)
+      jest.advanceTimersByTime(1001);
+
+      // Send second disconnect request - should go through
+      await wrapper.disconnectBluetoothDeviceService(address);
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not debounce disconnect requests for different devices', async () => {
+      const address1 = 0xcfbf8511b3ea;
+      const address2 = 0x123456789abc;
+
+      // Send disconnect for first device
+      await wrapper.disconnectBluetoothDeviceService(address1);
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+
+      // Send disconnect for second device - should not be debounced
+      await wrapper.disconnectBluetoothDeviceService(address2);
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw error when not connected to ESPHome', async () => {
+      (wrapper as any).connected = false;
+
+      const address = 0xcfbf8511b3ea;
+
+      await expect(wrapper.disconnectBluetoothDeviceService(address))
+        .rejects
+        .toThrow('Not connected to ESPHome device');
+
+      // Verify sendPlaintextMessage was not called
+      expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // Helper functions to encode protobuf messages for testing

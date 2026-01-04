@@ -92,6 +92,8 @@ export class EspHomeClientWrapper extends EventEmitter {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private readonly RECONNECT_DELAY_MS = 2000;
+  private lastDisconnectTime: Map<number, number> = new Map();
+  private readonly DISCONNECT_DEBOUNCE_MS = 1000;
 
   constructor(config: {
     host: string;
@@ -306,6 +308,15 @@ export class EspHomeClientWrapper extends EventEmitter {
     if (!this.connected) {
       throw new Error('Not connected to ESPHome device');
     }
+
+    // Debounce disconnect requests
+    const now = Date.now();
+    const lastTime = this.lastDisconnectTime.get(address) || 0;
+    if (now - lastTime < this.DISCONNECT_DEBOUNCE_MS) {
+      logInfo(`[ESPHomeClientWrapper] Debouncing disconnect request for ${address.toString(16)}`);
+      return;
+    }
+    this.lastDisconnectTime.set(address, now);
 
     // Send BluetoothDeviceRequest with DISCONNECT type (message type 68)
     const payload = this.encodeProtoFields([
