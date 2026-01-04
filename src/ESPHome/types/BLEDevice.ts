@@ -32,7 +32,12 @@ export class BLEDevice implements IBLEDevice {
     // Simple auto-reconnect listener for unexpected disconnects
     this.connectionResponseListener = ({ address, connected }) => {
       if (this.address !== address || this.connected === connected) return;
-      void this.connect();
+      // Only auto-reconnect if we were previously connected and now disconnected
+      if (!connected) {
+        void this.connect().catch(() => {
+          // Ignore errors in auto-reconnect to prevent infinite loops
+        });
+      }
     };
     
     this.connection.on('message.BluetoothDeviceConnectionResponse', this.connectionResponseListener);
@@ -47,7 +52,9 @@ export class BLEDevice implements IBLEDevice {
     const { addressType } = this.advertisement;
     await this.connection.connectBluetoothDeviceService(this.address, addressType);
     this.connected = true;
-    if (this.paired) await this.pair();
+    if (this.paired) {
+      await this.pair();
+    }
   };
 
   disconnect = async () => {
