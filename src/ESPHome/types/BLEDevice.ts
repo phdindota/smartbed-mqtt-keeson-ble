@@ -170,9 +170,10 @@ export class BLEDevice implements IBLEDevice {
       await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
     } catch (error) {
       // If write fails and we're not connected, try to reconnect and retry once
+      // Check connected status first to avoid infinite recursion
       if (!this.connected) {
         try {
-          await this.reconnectIfNeeded();
+          await this.connect();
           await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
         } catch (retryError) {
           throw new Error(`Write failed after reconnection attempt: ${retryError}`);
