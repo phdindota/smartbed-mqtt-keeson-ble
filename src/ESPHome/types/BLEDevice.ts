@@ -31,6 +31,8 @@ export class BLEDevice implements IBLEDevice {
   private processingCommand = false;
   private lastConnectionAttempt = 0;
   private readonly CONNECTION_COOLDOWN_MS = 1000; // 1 second between connections
+  private readonly CONNECTION_STABILIZATION_MS = 100; // Wait for connection to stabilize
+  private readonly COMMAND_COMPLETION_DELAY_MS = 100; // Wait for command to complete
 
   public mac: string;
   public get address() {
@@ -224,13 +226,13 @@ export class BLEDevice implements IBLEDevice {
         }
 
         // Step 2: Wait a bit for connection to stabilize
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, this.CONNECTION_STABILIZATION_MS));
 
         // Step 3: Send the command
         await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
 
         // Step 4: Wait for command to complete
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, this.COMMAND_COMPLETION_DELAY_MS));
 
         // Step 5: Gracefully disconnect
         await this.disconnect();
