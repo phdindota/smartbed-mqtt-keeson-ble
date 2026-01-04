@@ -287,6 +287,70 @@ describe('EspHomeClientWrapper', () => {
       expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
     });
   });
+
+  describe('connectBluetoothDeviceService', () => {
+    let wrapper: EspHomeClientWrapper;
+    let mockSendPlaintextMessage: jest.Mock;
+
+    beforeEach(() => {
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+
+      // Mock the sendPlaintextMessage method
+      mockSendPlaintextMessage = jest.fn();
+      (wrapper as any).client.sendPlaintextMessage = mockSendPlaintextMessage;
+      (wrapper as any).connected = true; // Simulate connected state
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+    });
+
+    it('should send V3 connect request with CONNECT_V3_WITHOUT_CACHE type', async () => {
+      const address = 0xcfbf8511b3ea; // Example BLE device address
+      const addressType = 0;
+
+      await wrapper.connectBluetoothDeviceService(address, addressType);
+
+      // Verify sendPlaintextMessage was called
+      expect(mockSendPlaintextMessage).toHaveBeenCalledTimes(1);
+      
+      // Verify it was called with the correct message type (68 = BLUETOOTH_DEVICE_REQUEST)
+      expect(mockSendPlaintextMessage).toHaveBeenCalledWith(
+        68, // BLUETOOTH_DEVICE_REQUEST
+        expect.any(Buffer)
+      );
+
+      // Decode the payload to verify the fields
+      const payload = mockSendPlaintextMessage.mock.calls[0][1] as Buffer;
+      
+      // Expected payload:
+      // Field 1 (address): tag=(1<<3)|0=8, then varint of address
+      // Field 2 (request_type): tag=(2<<3)|0=16, then varint value 5 (CONNECT_V3_WITHOUT_CACHE)
+      // Field 3 (has_address_type): tag=(3<<3)|0=24, then varint value 1
+      // Field 4 (address_type): tag=(4<<3)|0=32, then varint value 0
+      
+      // The payload should contain request_type = 5
+      // We can verify this by checking that byte at position where field 2 starts contains 0x10 (tag) followed by 0x05 (value)
+      expect(payload.includes(Buffer.from([0x10, 0x05]))).toBe(true);
+    });
+
+    it('should throw error when not connected', async () => {
+      (wrapper as any).connected = false;
+
+      const address = 0xcfbf8511b3ea;
+      const addressType = 0;
+
+      await expect(wrapper.connectBluetoothDeviceService(address, addressType))
+        .rejects
+        .toThrow('Not connected to ESPHome device');
+
+      // Verify sendPlaintextMessage was not called
+      expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // Helper functions to encode protobuf messages for testing
