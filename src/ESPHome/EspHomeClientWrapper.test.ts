@@ -448,6 +448,170 @@ describe('EspHomeClientWrapper', () => {
       expect(mockSendPlaintextMessage).not.toHaveBeenCalled();
     });
   });
+
+  describe('MAC address filtering', () => {
+    let wrapper: EspHomeClientWrapper;
+    let receivedAdvertisements: BLEAdvertisement[];
+
+    beforeEach(() => {
+      receivedAdvertisements = [];
+      wrapper = new EspHomeClientWrapper({
+        host: 'test.local',
+        port: 6053,
+      });
+
+      // Listen for parsed advertisements
+      wrapper.on('message.BluetoothLEAdvertisementResponse', (ad: BLEAdvertisement) => {
+        receivedAdvertisements.push(ad);
+      });
+    });
+
+    afterEach(() => {
+      wrapper.removeAllListeners();
+    });
+
+    it('should allow all advertisements when filtering is disabled (empty allowed list)', () => {
+      // Don't set any allowed devices - filtering is disabled by default
+      const deviceName1 = 'Device1';
+      const rawAdData1 = Buffer.concat([
+        Buffer.from([deviceName1.length + 1, 0x09]),
+        Buffer.from(deviceName1, 'utf8'),
+      ]);
+      const adMessage1 = encodeBluetoothLERawAdvertisement(111, -50, 0, rawAdData1);
+
+      const deviceName2 = 'Device2';
+      const rawAdData2 = Buffer.concat([
+        Buffer.from([deviceName2.length + 1, 0x09]),
+        Buffer.from(deviceName2, 'utf8'),
+      ]);
+      const adMessage2 = encodeBluetoothLERawAdvertisement(222, -60, 1, rawAdData2);
+
+      const payload = encodeBluetoothLERawAdvertisementsResponse([adMessage1, adMessage2]);
+      (wrapper as any).handleBLERawAdvertisements(payload);
+
+      // Both advertisements should be received
+      expect(receivedAdvertisements).toHaveLength(2);
+      expect(receivedAdvertisements[0].address).toBe(111);
+      expect(receivedAdvertisements[1].address).toBe(222);
+    });
+
+    it('should filter out non-allowed devices in handleBLERawAdvertisements', () => {
+      // Set allowed devices to only allow address 111
+      wrapper.setAllowedDevices([111]);
+
+      const deviceName1 = 'Device1';
+      const rawAdData1 = Buffer.concat([
+        Buffer.from([deviceName1.length + 1, 0x09]),
+        Buffer.from(deviceName1, 'utf8'),
+      ]);
+      const adMessage1 = encodeBluetoothLERawAdvertisement(111, -50, 0, rawAdData1);
+
+      const deviceName2 = 'Device2';
+      const rawAdData2 = Buffer.concat([
+        Buffer.from([deviceName2.length + 1, 0x09]),
+        Buffer.from(deviceName2, 'utf8'),
+      ]);
+      const adMessage2 = encodeBluetoothLERawAdvertisement(222, -60, 1, rawAdData2);
+
+      const payload = encodeBluetoothLERawAdvertisementsResponse([adMessage1, adMessage2]);
+      (wrapper as any).handleBLERawAdvertisements(payload);
+
+      // Only the allowed device should be received
+      expect(receivedAdvertisements).toHaveLength(1);
+      expect(receivedAdvertisements[0].address).toBe(111);
+      expect(receivedAdvertisements[0].name).toBe('Device1');
+    });
+
+    it('should filter out non-allowed devices in handleBLEAdvertisement', () => {
+      // Set allowed devices to only allow address 333
+      wrapper.setAllowedDevices([333]);
+
+      // Create a legacy advertisement message (message type 67) for allowed device
+      const allowedPayload = encodeLegacyBLEAdvertisement(333, 'AllowedDevice', -50, 0);
+      (wrapper as any).handleBLEAdvertisement(allowedPayload);
+
+      // Create a legacy advertisement message for non-allowed device
+      const blockedPayload = encodeLegacyBLEAdvertisement(444, 'BlockedDevice', -60, 1);
+      (wrapper as any).handleBLEAdvertisement(blockedPayload);
+
+      // Only the allowed device should be received
+      expect(receivedAdvertisements).toHaveLength(1);
+      expect(receivedAdvertisements[0].address).toBe(333);
+      expect(receivedAdvertisements[0].name).toBe('AllowedDevice');
+    });
+
+    it('should allow multiple configured devices', () => {
+      // Set allowed devices to allow both 111 and 222
+      wrapper.setAllowedDevices([111, 222]);
+
+      const deviceName1 = 'Device1';
+      const rawAdData1 = Buffer.concat([
+        Buffer.from([deviceName1.length + 1, 0x09]),
+        Buffer.from(deviceName1, 'utf8'),
+      ]);
+      const adMessage1 = encodeBluetoothLERawAdvertisement(111, -50, 0, rawAdData1);
+
+      const deviceName2 = 'Device2';
+      const rawAdData2 = Buffer.concat([
+        Buffer.from([deviceName2.length + 1, 0x09]),
+        Buffer.from(deviceName2, 'utf8'),
+      ]);
+      const adMessage2 = encodeBluetoothLERawAdvertisement(222, -60, 1, rawAdData2);
+
+      const deviceName3 = 'Device3';
+      const rawAdData3 = Buffer.concat([
+        Buffer.from([deviceName3.length + 1, 0x09]),
+        Buffer.from(deviceName3, 'utf8'),
+      ]);
+      const adMessage3 = encodeBluetoothLERawAdvertisement(333, -70, 0, rawAdData3);
+
+      const payload = encodeBluetoothLERawAdvertisementsResponse([adMessage1, adMessage2, adMessage3]);
+      (wrapper as any).handleBLERawAdvertisements(payload);
+
+      // Only devices 111 and 222 should be received
+      expect(receivedAdvertisements).toHaveLength(2);
+      expect(receivedAdvertisements[0].address).toBe(111);
+      expect(receivedAdvertisements[1].address).toBe(222);
+    });
+
+    it('should allow clearing the filter by setting empty array', () => {
+      // Set allowed devices first
+      wrapper.setAllowedDevices([111]);
+
+      const deviceName1 = 'Device1';
+      const rawAdData1 = Buffer.concat([
+        Buffer.from([deviceName1.length + 1, 0x09]),
+        Buffer.from(deviceName1, 'utf8'),
+      ]);
+      const adMessage1 = encodeBluetoothLERawAdvertisement(111, -50, 0, rawAdData1);
+
+      const deviceName2 = 'Device2';
+      const rawAdData2 = Buffer.concat([
+        Buffer.from([deviceName2.length + 1, 0x09]),
+        Buffer.from(deviceName2, 'utf8'),
+      ]);
+      const adMessage2 = encodeBluetoothLERawAdvertisement(222, -60, 1, rawAdData2);
+
+      let payload = encodeBluetoothLERawAdvertisementsResponse([adMessage1, adMessage2]);
+      (wrapper as any).handleBLERawAdvertisements(payload);
+
+      // Only device 111 should be received
+      expect(receivedAdvertisements).toHaveLength(1);
+      expect(receivedAdvertisements[0].address).toBe(111);
+
+      // Clear the filter
+      receivedAdvertisements = [];
+      wrapper.setAllowedDevices([]);
+
+      payload = encodeBluetoothLERawAdvertisementsResponse([adMessage1, adMessage2]);
+      (wrapper as any).handleBLERawAdvertisements(payload);
+
+      // Both devices should now be received
+      expect(receivedAdvertisements).toHaveLength(2);
+      expect(receivedAdvertisements[0].address).toBe(111);
+      expect(receivedAdvertisements[1].address).toBe(222);
+    });
+  });
 });
 
 // Helper functions to encode protobuf messages for testing
@@ -508,6 +672,30 @@ function encodeBluetoothLERawAdvertisementsResponse(advertisements: Buffer[]): B
   for (const ad of advertisements) {
     parts.push(encodeProtoField(1, 2, Buffer.concat([encodeVarint(ad.length), ad])));
   }
+
+  return Buffer.concat(parts);
+}
+
+function encodeLegacyBLEAdvertisement(
+  address: number,
+  name: string,
+  rssi: number,
+  addressType: number
+): Buffer {
+  const parts: Buffer[] = [];
+
+  // Field 1: address (uint64, wire type 0)
+  parts.push(encodeProtoField(1, 0, encodeVarint(address)));
+
+  // Field 2: name (string, wire type 2 - length-delimited)
+  const nameBuffer = Buffer.from(name, 'utf8');
+  parts.push(encodeProtoField(2, 2, Buffer.concat([encodeVarint(nameBuffer.length), nameBuffer])));
+
+  // Field 3: rssi (sint32, wire type 0)
+  parts.push(encodeProtoField(3, 0, encodeSignedVarint(rssi)));
+
+  // Field 7: address_type (uint32, wire type 0)
+  parts.push(encodeProtoField(7, 0, encodeVarint(addressType)));
 
   return Buffer.concat(parts);
 }
