@@ -510,14 +510,19 @@ export class EspHomeClientWrapper extends EventEmitter {
       const fields = this.decodeProtobuf(payload);
       
       const address = this.extractNumberField(fields, 1) || 0;
-      const services = this.parseGATTServices(fields.get(2) || []);
+      const serviceBuffers = fields.get(2) || [];
+      
+      // DEBUG: Log raw service buffer count
+      logInfo(`[ESPHomeClientWrapper] GATT response for ${address.toString(16)}: ${serviceBuffers.length} service buffer(s)`);
+      
+      const services = this.parseGATTServices(serviceBuffers);
 
-      // Debug logging to show all discovered GATT services and characteristics
-      logInfo(`[ESPHomeClientWrapper] GATT services discovered for ${address.toString(16)}:`);
+      // DEBUG: Log parsed services
+      logInfo(`[ESPHomeClientWrapper] Parsed ${services.length} GATT service(s) for ${address.toString(16)}:`);
       for (const service of services) {
-        logInfo(`  Service UUID: ${service.uuid} (handle: ${service.handle})`);
+        logInfo(`  Service UUID: ${service.uuid} (handle: ${service.handle}, ${service.characteristicsList.length} characteristics)`);
         for (const char of service.characteristicsList) {
-          logInfo(`    Characteristic UUID: ${char.uuid} (handle: ${char.handle}, props: 0x${char.properties.toString(16)})`);
+          logInfo(`    Char UUID: ${char.uuid} (handle: ${char.handle}, props: 0x${char.properties.toString(16)})`);
         }
       }
 
@@ -776,31 +781,44 @@ export class EspHomeClientWrapper extends EventEmitter {
   private parseGATTServices(serviceBuffers: Buffer[]): BluetoothGATTService[] {
     const services: BluetoothGATTService[] = [];
 
-    for (const serviceBuffer of serviceBuffers) {
+    for (let i = 0; i < serviceBuffers.length; i++) {
+      const serviceBuffer = serviceBuffers[i];
       const serviceFields = this.decodeProtobuf(serviceBuffer);
       
       const uuidField = serviceFields.get(1);
       const handle = this.extractNumberField(serviceFields, 2) || 0;
       const shortUuid = this.extractNumberField(serviceFields, 4);
 
+      // DEBUG: Log raw UUID field data
+      logInfo(`[GATT Parse] Service ${i}: handle=${handle}, uuidField length=${uuidField?.length || 0}, shortUuid=${shortUuid}`);
+      if (uuidField) {
+        for (let j = 0; j < uuidField.length; j++) {
+          logInfo(`[GATT Parse]   uuidField[${j}]: ${uuidField[j].toString('hex')}`);
+        }
+      }
+
       // Parse UUID - prioritize 128-bit UUID over short UUID
       let uuid: string;
       if (uuidField && uuidField.length >= 2) {
         // Use 128-bit UUID from repeated uint64 field
         const parsed = this.parseUuid128FromRepeatedUint64(uuidField);
+        logInfo(`[GATT Parse]   128-bit UUID parsed: ${parsed}`);
         uuid = parsed || NULL_UUID;
       } else if (shortUuid !== undefined) {
         // Fall back to short UUID (16-bit or 32-bit)
         uuid = this.formatShortUuid(shortUuid);
+        logInfo(`[GATT Parse]   Short UUID formatted: ${uuid}`);
       } else {
         uuid = NULL_UUID;
+        logInfo(`[GATT Parse]   No UUID found, using NULL_UUID`);
       }
 
       // Parse characteristics
       const characteristicsList: BluetoothGATTCharacteristic[] = [];
       const characteristicBuffers = serviceFields.get(3) || [];
       
-      for (const charBuffer of characteristicBuffers) {
+      for (let k = 0; k < characteristicBuffers.length; k++) {
+        const charBuffer = characteristicBuffers[k];
         const charFields = this.decodeProtobuf(charBuffer);
         
         const charUuidField = charFields.get(1);
@@ -808,15 +826,26 @@ export class EspHomeClientWrapper extends EventEmitter {
         const properties = this.extractNumberField(charFields, 3) || 0;
         const charShortUuid = this.extractNumberField(charFields, 5);
 
+        // DEBUG: Log raw characteristic UUID field data
+        logInfo(`[GATT Parse]   Characteristic ${k}: handle=${charHandle}, uuidField length=${charUuidField?.length || 0}, shortUuid=${charShortUuid}, props=0x${properties.toString(16)}`);
+        if (charUuidField) {
+          for (let j = 0; j < charUuidField.length; j++) {
+            logInfo(`[GATT Parse]     charUuidField[${j}]: ${charUuidField[j].toString('hex')}`);
+          }
+        }
+
         // Parse characteristic UUID - prioritize 128-bit UUID over short UUID
         let charUuid: string;
         if (charUuidField && charUuidField.length >= 2) {
           const parsed = this.parseUuid128FromRepeatedUint64(charUuidField);
+          logInfo(`[GATT Parse]     128-bit char UUID parsed: ${parsed}`);
           charUuid = parsed || NULL_UUID;
         } else if (charShortUuid !== undefined) {
           charUuid = this.formatShortUuid(charShortUuid);
+          logInfo(`[GATT Parse]     Short char UUID formatted: ${charUuid}`);
         } else {
           charUuid = NULL_UUID;
+          logInfo(`[GATT Parse]     No char UUID found, using NULL_UUID`);
         }
 
         // Parse descriptors (field 4)
@@ -874,7 +903,10 @@ export class EspHomeClientWrapper extends EventEmitter {
   private parseUuid128FromRepeatedUint64(buffers: Buffer[]): string | null {
     // Parse 128-bit UUID from repeated uint64 field (ESPHome protobuf format)
     // The UUID is sent as two uint64 varints (low and high parts)
+    logInfo(`[UUID Parse] parseUuid128FromRepeatedUint64 called with ${buffers?.length || 0} buffers`);
+    
     if (!buffers || buffers.length === 0) {
+      logInfo(`[UUID Parse] No buffers provided`);
       return null;
     }
     
@@ -884,8 +916,11 @@ export class EspHomeClientWrapper extends EventEmitter {
     }
 
     // Decode the two uint64 values from varints using BigInt to preserve all bits
-    const [lowBig] = this.readVarintBigInt(buffers[0], 0);
-    const [highBig] = this.readVarintBigInt(buffers[1], 0);
+    const [lowBig, lowBytes] = this.readVarintBigInt(buffers[0], 0);
+    const [highBig, highBytes] = this.readVarintBigInt(buffers[1], 0);
+    
+    logInfo(`[UUID Parse] Low part: 0x${lowBig.toString(16)} (${lowBytes} bytes from buffer: ${buffers[0].toString('hex')})`);
+    logInfo(`[UUID Parse] High part: 0x${highBig.toString(16)} (${highBytes} bytes from buffer: ${buffers[1].toString('hex')})`);
 
     // Write the values as little-endian uint64 to get the original bytes
     const lowBuf = Buffer.alloc(8);
