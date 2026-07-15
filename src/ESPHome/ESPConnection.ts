@@ -135,7 +135,7 @@ export class ESPConnection implements IESPConnection {
     
     await this.discoverBLEDevices(
       (bleDevice) => {
-        const { name, mac, advertisement, address } = bleDevice;
+        const { name, mac, address } = bleDevice;
 
         // Skip if we've already accepted this device
         if (seenAddresses.includes(address)) return;
@@ -143,16 +143,6 @@ export class ESPConnection implements IESPConnection {
         let index = deviceNames.indexOf(mac);
         if (index === -1) index = deviceNames.indexOf(name.toLowerCase());
         if (index === -1) return;
-
-        // Skip devices with empty metadata (partial/early advertisements)
-        // Wait for a more complete advertisement with service UUIDs or manufacturer data
-        const hasEmptyMetadata =
-          advertisement.manufacturerDataList.length === 0 && advertisement.serviceUuidsList.length === 0;
-
-        if (hasEmptyMetadata) {
-          logInfo(`[ESPHome] Skipping ${name} with empty metadata, waiting for complete advertisement`);
-          return;
-        }
 
         // Mark this device as seen and accepted
         seenAddresses.push(address);

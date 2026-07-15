@@ -16,9 +16,12 @@ enum BluetoothMessageType {
   BLUETOOTH_GATT_WRITE_REQUEST = 75,
   BLUETOOTH_GATT_NOTIFY_REQUEST = 78,
   BLUETOOTH_GATT_NOTIFY_DATA_RESPONSE = 79,
-  BLUETOOTH_GATT_ERROR_RESPONSE = 83,
+  BLUETOOTH_GATT_ERROR_RESPONSE = 82,
+  BLUETOOTH_GATT_WRITE_RESPONSE = 83,
+  BLUETOOTH_GATT_NOTIFY_RESPONSE = 84,
   BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE = 93,
-  BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE = 126,
+  BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE = 88,
+  BLUETOOTH_SCANNER_STATE_RESPONSE = 126,
 }
 
 enum BluetoothDeviceRequestType {
@@ -52,10 +55,13 @@ const SUPPRESSED_MESSAGE_TYPES = [
   BluetoothMessageType.BLUETOOTH_GATT_GET_SERVICES_DONE_RESPONSE, // 72
   BluetoothMessageType.BLUETOOTH_GATT_READ_RESPONSE, // 74
   BluetoothMessageType.BLUETOOTH_GATT_NOTIFY_DATA_RESPONSE, // 79
-  81, // Unknown BLE scan control message type (not in enum but observed in logs)
-  BluetoothMessageType.BLUETOOTH_GATT_ERROR_RESPONSE, // 83
+  81, // BluetoothConnectionsFreeResponse
+  BluetoothMessageType.BLUETOOTH_GATT_ERROR_RESPONSE, // 82
+  BluetoothMessageType.BLUETOOTH_GATT_WRITE_RESPONSE, // 83
+  BluetoothMessageType.BLUETOOTH_GATT_NOTIFY_RESPONSE, // 84
+  BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE, // 88
   BluetoothMessageType.BLUETOOTH_LE_RAW_ADVERTISEMENTS_RESPONSE, // 93
-  BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE, // 126
+  BluetoothMessageType.BLUETOOTH_SCANNER_STATE_RESPONSE, // 126
 ] as const;
 
 /**
@@ -290,10 +296,28 @@ export class EspHomeClientWrapper extends EventEmitter {
       this.handleGATTError.bind(this)
     );
 
+    // Handle successful GATT write acknowledgement
+    this.messageHandlers.set(
+      BluetoothMessageType.BLUETOOTH_GATT_WRITE_RESPONSE,
+      this.handleGATTWriteResponse.bind(this)
+    );
+
+    // Handle successful GATT notification subscription acknowledgement
+    this.messageHandlers.set(
+      BluetoothMessageType.BLUETOOTH_GATT_NOTIFY_RESPONSE,
+      this.handleGATTNotifyResponse.bind(this)
+    );
+
     // Handle device clear cache response
     this.messageHandlers.set(
       BluetoothMessageType.BLUETOOTH_DEVICE_CLEAR_CACHE_RESPONSE,
       this.handleDeviceClearCacheResponse.bind(this)
+    );
+
+    // Handle Bluetooth scanner state
+    this.messageHandlers.set(
+      BluetoothMessageType.BLUETOOTH_SCANNER_STATE_RESPONSE,
+      this.handleBluetoothScannerStateResponse.bind(this)
     );
   }
 
@@ -369,7 +393,7 @@ export class EspHomeClientWrapper extends EventEmitter {
     // Send SubscribeBluetoothLEAdvertisementsRequest (message type 66)
     // flags = 1 for V2 protocol (raw advertisements via message type 93)
     const payload = this.encodeProtoFields([
-      { fieldNumber: 1, wireType: WireType.VARINT, value: 1 }, // flags = 1 (V2 protocol)
+      { fieldNumber: 1, wireType: WireType.VARINT, value: 1 }, // flags = 1 (raw V2 advertisements)
     ]);
 
     this.sendMessage(BluetoothMessageType.SUBSCRIBE_BLUETOOTH_LE_ADVERTISEMENTS_REQUEST, payload);
@@ -763,10 +787,12 @@ export class EspHomeClientWrapper extends EventEmitter {
       const fields = this.decodeProtobuf(payload);
       
       const address = this.extractNumberField(fields, 1) || 0;
-      const error = this.extractNumberField(fields, 2) || 0;
+      const handle = this.extractNumberField(fields, 2) || 0;
+      const error = this.extractNumberField(fields, 3) || 0;
 
       this.emit('message.BluetoothGATTErrorResponse', {
         address,
+        handle,
         error,
       });
 
@@ -791,6 +817,57 @@ export class EspHomeClientWrapper extends EventEmitter {
       }
     } catch (error) {
       logError('[ESPHomeClientWrapper] Error parsing GATT error response:', error);
+    }
+  }
+
+  private handleGATTWriteResponse(payload: Buffer): void {
+    try {
+      const fields = this.decodeProtobuf(payload);
+      const address = this.extractNumberField(fields, 1) || 0;
+      const handle = this.extractNumberField(fields, 2) || 0;
+
+      this.emit('message.BluetoothGATTWriteResponse', {
+        address,
+        handle,
+      });
+    } catch (error) {
+      logError('[ESPHomeClientWrapper] Error parsing GATT write response:', error);
+    }
+  }
+
+  private handleGATTNotifyResponse(payload: Buffer): void {
+    try {
+      const fields = this.decodeProtobuf(payload);
+      const address = this.extractNumberField(fields, 1) || 0;
+      const handle = this.extractNumberField(fields, 2) || 0;
+
+      logInfo(
+        `[ESPHomeClientWrapper] Notifications enabled for device ${address.toString(16)} on handle ${handle}`
+      );
+
+      this.emit('message.BluetoothGATTNotifyResponse', {
+        address,
+        handle,
+      });
+    } catch (error) {
+      logError('[ESPHomeClientWrapper] Error parsing GATT notify response:', error);
+    }
+  }
+
+  private handleBluetoothScannerStateResponse(payload: Buffer): void {
+    try {
+      const fields = this.decodeProtobuf(payload);
+      const state = this.extractNumberField(fields, 1) || 0;
+      const mode = this.extractNumberField(fields, 2) || 0;
+      const configuredMode = this.extractNumberField(fields, 3) || 0;
+
+      this.emit('message.BluetoothScannerStateResponse', {
+        state,
+        mode,
+        configuredMode,
+      });
+    } catch (error) {
+      logError('[ESPHomeClientWrapper] Error parsing Bluetooth scanner state:', error);
     }
   }
 
@@ -1221,18 +1298,21 @@ export class EspHomeClientWrapper extends EventEmitter {
   }
 
   private sendMessage(type: number, payload: Buffer): void {
-    // The esphome-client library doesn't expose sendPlaintextMessage in its public API,
-    // but we need it to send custom Bluetooth proxy messages that aren't in the library.
-    // We access it through the internal client object.
+    // Use the library's transport-aware framing method so custom messages
+    // work with both plaintext and Noise-encrypted ESPHome API connections.
     const client = this.client as any;
 
-    if (typeof client.sendPlaintextMessage === 'function') {
-      client.sendPlaintextMessage(type, payload);
-    } else {
-      // Fallback: Log an error if the method is not available
-      // This should not happen with the current version of esphome-client
-      logError('[ESPHomeClientWrapper] Cannot send message - sendPlaintextMessage not available in esphome-client');
-      throw new Error('sendPlaintextMessage method not available in esphome-client');
+    if (typeof client.frameAndSend === 'function') {
+      client.frameAndSend(type, payload);
+      logInfo(
+        `[ESPHomeClientWrapper] Sent ESPHome message type ${type}, payload length ${payload.length}`
+      );
+      return;
     }
+
+    logError(
+      '[ESPHomeClientWrapper] Cannot send message - frameAndSend not available in esphome-client'
+    );
+    throw new Error('frameAndSend method not available in esphome-client');
   }
 }
