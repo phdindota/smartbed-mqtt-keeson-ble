@@ -33,6 +33,8 @@ export const setupMotorEntities = (
 ) => {
   if (!cache.motorState) cache.motorState = {};
 
+  const isKSBT03 = deviceData.device.mdl.toUpperCase().startsWith('KSBT03');
+
   const buildCoverCommand = (motor: keyof MotorState) => async (command: string) => {
     const motorState = cache.motorState!;
     const originalCommand = move(motorState);
@@ -75,7 +77,9 @@ export const setupMotorEntities = (
     ).setOnline();
   }
 
-  if (!cache.tiltMotor) {
+  // KSBT03 Tempur-Pedic bases use the command historically labeled
+  // "Tilt" for their physical lumbar motor.
+  if (!isKSBT03 && !cache.tiltMotor) {
     cache.tiltMotor = new Cover(
       mqtt,
       deviceData,
@@ -85,11 +89,13 @@ export const setupMotorEntities = (
   }
 
   if (!cache.lumbarMotor) {
+    const lumbarCommandMotor: keyof MotorState = isKSBT03 ? 'tilt' : 'lumbar';
+
     cache.lumbarMotor = new Cover(
       mqtt,
       deviceData,
       buildEntityConfig('MotorLumbar', { icon: 'mdi:lumbar' }),
-      buildCoverCommand('lumbar')
+      buildCoverCommand(lumbarCommandMotor)
     ).setOnline();
   }
 };
