@@ -27,11 +27,37 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
 
   // Try each known service/characteristic pair
   for (const { serviceUuid, writeCharUuid } of knownServices) {
-    const characteristic = await getCharacteristic(serviceUuid, writeCharUuid, false);
-    if (characteristic) {
-      logInfo(`[Keeson KSBT] Found working service for ${name}: ${serviceUuid}`);
-      return new BLEController(deviceData, bleDevice, characteristic.handle, buildCommand);
+    const writeCharacteristic = await getCharacteristic(serviceUuid, writeCharUuid, false);
+    if (!writeCharacteristic) continue;
+
+    logInfo(`[Keeson KSBT] Found working service for ${name}: ${serviceUuid}`);
+
+    let notifyHandles: { notify: number } | undefined;
+
+    // KSBT03 devices using Nordic UART expose notifications on RX characteristic 6e400003.
+    if (serviceUuid === '6e400001-b5a3-f393-e0a9-e50e24dcca9e') {
+      const notifyCharacteristic = await getCharacteristic(
+        serviceUuid,
+        '6e400003-b5a3-f393-e0a9-e50e24dcca9e',
+        false
+      );
+
+      if (notifyCharacteristic) {
+        notifyHandles = { notify: notifyCharacteristic.handle };
+        logInfo(
+          `[Keeson KSBT] Found notify characteristic for ${name}: handle ${notifyCharacteristic.handle}`
+        );
+      }
     }
+
+    const controller = new BLEController(
+      deviceData,
+      bleDevice,
+      writeCharacteristic.handle,
+      buildCommand,
+      notifyHandles
+    );
+    return controller;
   }
 
   logInfo(`[Keeson KSBT] Could not find any supported services for device: ${name}`);

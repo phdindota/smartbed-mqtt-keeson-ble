@@ -14,3 +14,6 @@ autotest_output/
 
 yarn-error.log
 thumbs.db
+# Local editing backups
+*.backup-*
+*.original

@@ -9,6 +9,8 @@ const strings = {
   PresetLounge: 'Preset: Lounge',
   PresetMemory1: 'Preset: Memory 1',
   PresetMemory2: 'Preset: Memory 2',
+  PresetFavorite1: 'Preset: Favorite 1',
+  PresetFavorite2: 'Preset: Favorite 2',
   PresetMemory3: 'Preset: Memory 3',
   PresetMemory4: 'Preset: Memory 4',
   PresetMemory5: 'Preset: Memory 5',
